@@ -6,7 +6,7 @@ import path from 'path';
 // Define the OpenRouter API details
 const OPENROUTER_API_KEY = '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'
 const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL_ID = 'anthropic/claude-3.7-sonnet'; // Model that is more reliable with function calling
+const MODEL_ID = 'google/gemini-2.5-flash-preview'; // Model that is more reliable with function calling
 
 // Message types
 type Role = 'system' | 'user' | 'assistant' | 'tool';
@@ -38,6 +38,23 @@ interface Tool {
 
 // Define our file operation tools
 const tools: Tool[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'think',
+      description: 'Use this tool to document your thinking process. This allows you to work through complex problems step by step, reason about different approaches, and clarify your understanding. The content is only visible to you. When you use this tool, you must use it 3 times in a row. This is to ensure deeper and proper thinking.',
+      parameters: {
+        type: 'object',
+        properties: {
+          thoughts: { 
+            type: 'string', 
+            description: 'Your detailed thinking process, reasoning, or working through a problem.' 
+          }
+        },
+        required: ['thoughts']
+      }
+    }
+  },
   {
     type: 'function',
     function: {
@@ -124,6 +141,65 @@ const tools: Tool[] = [
         required: ['path']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'createFolder',
+      description: 'Create a new folder or directory.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'The folder path to create.' }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'deleteFolder',
+      description: 'Delete a folder and all its contents.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'The folder path to delete.' },
+          recursive: { type: 'boolean', description: 'Whether to delete non-empty directories recursively. Defaults to false for safety.' }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'renameFolder',
+      description: 'Rename a folder.',
+      parameters: {
+        type: 'object',
+        properties: {
+          oldPath: { type: 'string', description: 'The current path of the folder.' },
+          newPath: { type: 'string', description: 'The new path for the folder.' }
+        },
+        required: ['oldPath', 'newPath']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'renameFile',
+      description: 'Rename a file.',
+      parameters: {
+        type: 'object',
+        properties: {
+          oldPath: { type: 'string', description: 'The current path of the file.' },
+          newPath: { type: 'string', description: 'The new path for the file.' }
+        },
+        required: ['oldPath', 'newPath']
+      }
+    }
   }
 ];
 
@@ -197,6 +273,49 @@ function validateConversationHistory(messages: Message[]): Message[] {
 
 // Tool implementations
 const toolImplementations: Record<string, Function> = {
+  think: async (args: any) => {
+    // Just log the thinking internally but don't expose to user
+    console.log('Agent thinking: ' + args.thoughts.substring(0, 100) + (args.thoughts.length > 100 ? '...' : ''));
+    return { success: true, message: 'Thinking completed.', thoughts: args.thoughts };
+  },
+  createFolder: async (args: any) => {
+    try {
+      const safePath = path.normalize(args.path).replace(/^\.\.\//g, '');
+      await fs.mkdir(safePath, { recursive: true });
+      return { success: true, message: `Folder ${args.path} created successfully.` };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+  deleteFolder: async (args: any) => {
+    try {
+      const safePath = path.normalize(args.path).replace(/^\.\.\//g, '');
+      await fs.rm(safePath, { recursive: args.recursive === true, force: args.recursive === true });
+      return { success: true, message: `Folder ${args.path} deleted successfully.` };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+  renameFolder: async (args: any) => {
+    try {
+      const safeOldPath = path.normalize(args.oldPath).replace(/^\.\.\//g, '');
+      const safeNewPath = path.normalize(args.newPath).replace(/^\.\.\//g, '');
+      await fs.rename(safeOldPath, safeNewPath);
+      return { success: true, message: `Folder renamed from ${args.oldPath} to ${args.newPath} successfully.` };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+  renameFile: async (args: any) => {
+    try {
+      const safeOldPath = path.normalize(args.oldPath).replace(/^\.\.\//g, '');
+      const safeNewPath = path.normalize(args.newPath).replace(/^\.\.\//g, '');
+      await fs.rename(safeOldPath, safeNewPath);
+      return { success: true, message: `File renamed from ${args.oldPath} to ${args.newPath} successfully.` };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
   listFiles: async (args: any) => {
     try {
       // Default to current directory if path not provided
@@ -455,7 +574,7 @@ async function main() {
   let messages: Message[] = [
     {
       role: 'system',
-      content: 'You are a file assistant. You can list, read, write, update, or delete files using the provided tools. You must follow these strict rules:\n\n1. When asked to create or modify files, ALWAYS use the appropriate tool rather than just saying you would do it.\n\n2. Only process ONE file operation at a time. If the user asks to create or modify multiple files, tell them you\'ll handle them one by one and start with the first file only.\n\n3. Use the listFiles tool when users want to see what files are available in a directory. You can filter by file extension (e.g., ".txt", ".js") if needed.\n\n4. Respond with a summary of changes or answer the user\'s question in a friendly, helpful manner.\n\n5. If a request is unclear, politely ask for clarification.\n\nIMPORTANT: The system can only handle one file operation per turn. Never try to perform multiple operations in a single response. Do not finish generating your outputs until the assigned task from the user is complete, if the user asks you to do something, continue doing it until the task is done, no need to stop to ask the user if you should continue.'
+      content: 'You are a file assistant. You can list, read, write, update, or delete files and folders using the provided tools. You must follow these strict rules:\n\n1. When asked to create or modify files or folders, ALWAYS use the appropriate tool rather than just saying you would do it.\n\n2. Only process ONE file or folder operation at a time. If the user asks to create or modify multiple files or folders, tell them you\'ll handle them one by one and start with the first one only.\n\n3. Use the listFiles tool when users want to see what files are available in a directory. You can filter by file extension (e.g., ".txt", ".js") if needed.\n\n4. Respond with a summary of changes or answer the user\'s question in a friendly, helpful manner.\n\n5. If a request is unclear, politely ask for clarification.\n\n6. Make extensive use of the "think" tool to work through complex problems or tasks. The thinking tool allows you to reason step by step without showing all your work to the user. Always use this tool for planning before taking action.\n\n7. For folder operations, use createFolder, deleteFolder, and renameFolder tools. When deleting folders that contain files, set recursive:true to delete all contents.\n\n8. For file renaming, use the renameFile tool with oldPath and newPath parameters.\n\nIMPORTANT: The system can only handle one file or folder operation per turn. Never try to perform multiple operations in a single response. Do not finish generating your outputs until the assigned task from the user is complete, if the user asks you to do something, continue doing it until the task is done, no need to stop to ask the user if you should continue.'
     }
   ];
 
