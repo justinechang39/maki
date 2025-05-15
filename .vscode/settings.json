@@ -1,0 +1,8 @@
+{
+  "amp.commands.allowlist": [
+    "npm install",
+    "rm index.ts",
+    "rm index.tsx",
+    "curl -s https://openrouter.ai/api/v1/models"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "name": "openrouter_agent",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node index.ts"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "OpenRouter Agent for file operations",
+  "dependencies": {
+    "@openrouter/ai-sdk-provider": "^0.4.5",
+    "inquirer": "^9.2.12",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "@types/inquirer": "^9.0.7",
+    "@types/node": "^20.17.47",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
+}
