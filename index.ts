@@ -59,17 +59,25 @@ const tools: Tool[] = [
     type: 'function',
     function: {
       name: 'listFiles',
-      description: 'List all files in a directory with optional extension filtering.',
+      description: 'List files and/or folders in a directory with optional filtering.',
       parameters: {
         type: 'object',
         properties: {
           path: { 
             type: 'string', 
-            description: 'The directory path to list files from. Defaults to current directory if not specified.' 
+            description: 'The directory path to list from. Defaults to current directory if not specified.' 
           },
           extension: {
             type: 'string',
-            description: 'Optional file extension to filter by (e.g., "txt", "js", etc.). Do not include the dot.'  
+            description: 'Optional file extension to filter by (e.g., "txt", "js", etc.). Only applies to files, not folders. Do not include the dot.'  
+          },
+          includeFiles: {
+            type: 'boolean',
+            description: 'Whether to include files in the result. Defaults to true.'
+          },
+          includeFolders: {
+            type: 'boolean',
+            description: 'Whether to include folders/directories in the result. Defaults to false.'
           }
         },
         required: []
@@ -200,6 +208,52 @@ const tools: Tool[] = [
         required: ['oldPath', 'newPath']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'readTodo',
+      description: 'Read the current todo list from todo.md file.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'writeTodo',
+      description: 'Create or completely replace the todo.md file with new content.',
+      parameters: {
+        type: 'object',
+        properties: {
+          content: { type: 'string', description: 'The new content for the todo.md file.' }
+        },
+        required: ['content']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'updateTodoItem',
+      description: 'Update the status of a specific todo item.',
+      parameters: {
+        type: 'object',
+        properties: {
+          itemIndex: { type: 'number', description: 'The line number (starting from 1) of the todo item to update.' },
+          newStatus: { 
+            type: 'string', 
+            description: 'The new status to apply to the todo item.', 
+            enum: ['pending', 'in_progress', 'completed', 'cancelled']
+          },
+          newText: { type: 'string', description: 'Optional new text for the todo item.' }
+        },
+        required: ['itemIndex', 'newStatus']
+      }
+    }
   }
 ];
 
@@ -316,29 +370,131 @@ const toolImplementations: Record<string, Function> = {
       return { error: error.message };
     }
   },
+  readTodo: async () => {
+    try {
+      const todoPath = 'todo.md';
+      try {
+        // Check if file exists
+        await fs.access(todoPath);
+      } catch {
+        // If file doesn't exist, return empty todo list
+        return { content: '', exists: false, message: 'No todo list found. Use writeTodo to create one.' };
+      }
+      
+      // Read the file if it exists
+      const content = await fs.readFile(todoPath, 'utf-8');
+      return { content, exists: true };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+  writeTodo: async (args: any) => {
+    try {
+      const todoPath = 'todo.md';
+      await fs.writeFile(todoPath, args.content, 'utf-8');
+      return { success: true, message: 'Todo list has been created/updated successfully.' };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+  updateTodoItem: async (args: any) => {
+    try {
+      const todoPath = 'todo.md';
+      
+      // Check if file exists
+      try {
+        await fs.access(todoPath);
+      } catch {
+        return { error: 'Todo list does not exist. Use writeTodo to create one first.' };
+      }
+      
+      // Read the current content
+      const content = await fs.readFile(todoPath, 'utf-8');
+      const lines = content.split('\n');
+      
+      // Check if the specified line exists
+      if (args.itemIndex < 1 || args.itemIndex > lines.length) {
+        return { error: `Invalid item index. The todo list has ${lines.length} items.` };
+      }
+      
+      // Update the specific line with new status
+      const lineIndex = args.itemIndex - 1; // Convert to 0-based index
+      const currentLine = lines[lineIndex];
+      
+      // Parse the line to check its current format
+      let newLine = '';
+      
+      // Status markers we recognize
+      const statusMarkers = {
+        pending: '[ ]',
+        in_progress: '[/]',
+        completed: '[x]',
+        cancelled: '[~]'
+      };
+      
+      // If newText is provided, use it, otherwise keep the current text
+      const newText = args.newText || currentLine.replace(/^\s*(?:\[([ x/~])\]\s*)?/, '');
+      
+      // Create new line with appropriate status marker
+      const status = args.newStatus as keyof typeof statusMarkers;
+      newLine = `- ${statusMarkers[status]} ${newText}`;
+      
+      // Replace the line
+      lines[lineIndex] = newLine;
+      
+      // Write back the updated content
+      await fs.writeFile(todoPath, lines.join('\n'), 'utf-8');
+      
+      return { 
+        success: true, 
+        message: `Todo item ${args.itemIndex} updated to status '${args.newStatus}'.`,
+        updatedLine: newLine
+      };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
   listFiles: async (args: any) => {
     try {
       // Default to current directory if path not provided
       const dirPath = args.path ? path.normalize(args.path).replace(/^\.\.\//, '') : '.';
       
+      // Set defaults for includeFiles and includeFolders
+      const includeFiles = args.includeFiles !== false; // Default to true
+      const includeFolders = args.includeFolders === true; // Default to false
+      
       // Read the directory contents
-      const files = await fs.readdir(dirPath, { withFileTypes: true });
+      const entries = await fs.readdir(dirPath, { withFileTypes: true });
       
-      // Filter files (not directories) and apply extension filter if provided
-      let fileList = files
-        .filter(file => file.isFile())
-        .map(file => file.name);
+      // Process files if needed
+      let files: string[] = [];
+      if (includeFiles) {
+        files = entries
+          .filter(entry => entry.isFile())
+          .map(entry => entry.name);
+        
+        // Apply extension filter if provided
+        if (args.extension) {
+          const extension = args.extension.startsWith('.') ? args.extension : `.${args.extension}`;
+          files = files.filter(filename => filename.endsWith(extension));
+        }
+      }
       
-      // Apply extension filter if provided
-      if (args.extension) {
-        const extension = args.extension.startsWith('.') ? args.extension : `.${args.extension}`;
-        fileList = fileList.filter(filename => filename.endsWith(extension));
+      // Process folders if needed
+      let folders: string[] = [];
+      if (includeFolders) {
+        folders = entries
+          .filter(entry => entry.isDirectory())
+          .map(entry => entry.name);
       }
       
       return { 
         directory: dirPath,
-        files: fileList,
-        count: fileList.length
+        files: files,
+        folders: folders,
+        fileCount: files.length,
+        folderCount: folders.length,
+        totalCount: files.length + folders.length
       };
     } catch (error: any) {
       return { error: error.message };
@@ -568,13 +724,17 @@ async function main() {
   console.log('Available commands:');
   console.log('  /exit  - Exit the application');
   console.log('  /reset - Reset the conversation history');
-  console.log('\nFor best results, perform one file operation at a time.\n');
+  console.log('\nAvailable features:');
+  console.log('  • File operations: read, write, update, delete, rename');
+  console.log('  • Folder operations: create, delete, rename, list');
+  console.log('  • Todo management: create and track tasks');
+  console.log('\nFor best results, perform one file or folder operation at a time.\n');
 
   // Initialize messages with system message
   let messages: Message[] = [
     {
       role: 'system',
-      content: 'You are a file assistant. You can list, read, write, update, or delete files and folders using the provided tools. You must follow these strict rules:\n\n1. When asked to create or modify files or folders, ALWAYS use the appropriate tool rather than just saying you would do it.\n\n2. Only process ONE file or folder operation at a time. If the user asks to create or modify multiple files or folders, tell them you\'ll handle them one by one and start with the first one only.\n\n3. Use the listFiles tool when users want to see what files are available in a directory. You can filter by file extension (e.g., ".txt", ".js") if needed.\n\n4. Respond with a summary of changes or answer the user\'s question in a friendly, helpful manner.\n\n5. If a request is unclear, politely ask for clarification.\n\n6. Make extensive use of the "think" tool to work through complex problems or tasks. The thinking tool allows you to reason step by step without showing all your work to the user. Always use this tool for planning before taking action.\n\n7. For folder operations, use createFolder, deleteFolder, and renameFolder tools. When deleting folders that contain files, set recursive:true to delete all contents.\n\n8. For file renaming, use the renameFile tool with oldPath and newPath parameters.\n\nIMPORTANT: The system can only handle one file or folder operation per turn. Never try to perform multiple operations in a single response. Do not finish generating your outputs until the assigned task from the user is complete, if the user asks you to do something, continue doing it until the task is done, no need to stop to ask the user if you should continue.'
+      content: 'You are a file assistant. You can list, read, write, update, or delete files and folders using the provided tools. You must follow these strict rules:\n\n1. When asked to create or modify files or folders, ALWAYS use the appropriate tool rather than just saying you would do it.\n\n2. Only process ONE file or folder operation at a time. If the user asks to create or modify multiple files or folders, tell them you\'ll handle them one by one and start with the first one only.\n\n3. Use the listFiles tool when users want to see what files are available in a directory. You can filter by file extension (e.g., ".txt", ".js") if needed.\n\n4. Respond with a summary of changes or answer the user\'s question in a friendly, helpful manner.\n\n5. If a request is unclear, politely ask for clarification.\n\n6. Make extensive use of the "think" tool to work through complex problems or tasks. The thinking tool allows you to reason step by step without showing all your work to the user. Always use this tool for planning before taking action.\n\n7. For folder operations, use createFolder, deleteFolder, and renameFolder tools. When deleting folders that contain files, set recursive:true to delete all contents.\n\n8. For file renaming, use the renameFile tool with oldPath and newPath parameters.\n\n9. When given a complex task, ALWAYS follow this workflow:\n   a. Use the think tool first to plan your approach\n   b. Use writeTodo to create a todo.md file listing the steps required\n   c. Execute each step one by one\n   d. Use readTodo to check progress and updateTodoItem to mark items as in_progress or completed as you go\n   e. Continue until all items are complete\n\nThe todo list should use the following format for status tracking:\n- [ ] Pending task\n- [/] Task in progress\n- [x] Completed task\n- [~] Cancelled task\n\nIMPORTANT: The system can only handle one file or folder operation per turn. Never try to perform multiple operations in a single response. Do not finish generating your outputs until the assigned task from the user is complete, if the user asks you to do something, continue doing it until the task is done, no need to stop to ask the user if you should continue.'
     }
   ];
 
