@@ -6,7 +6,7 @@ import path from 'path';
 // Define the OpenRouter API details
 const OPENROUTER_API_KEY = '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'
 const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL_ID = 'google/gemini-2.5-flash-preview'; // Model that is more reliable with function calling
+const MODEL_ID = 'openai/gpt-4.1-nano'; // Model that is more reliable with function calling
 
 // Message types
 type Role = 'system' | 'user' | 'assistant' | 'tool';
