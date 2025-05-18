@@ -2,18 +2,42 @@
 import inquirer from 'inquirer';
 import * as fs from 'fs/promises';
 import path from 'path';
+import { fileURLToPath } from 'url'; // To get __dirname in ESM
 
-// Define the OpenRouter API details
-const OPENROUTER_API_KEY = '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'
+// For colored output (optional, install with: npm install chalk@4.1.2)
+// If you prefer not to use chalk, remove these lines and the chalk.xyz calls
+import chalk from 'chalk';
+const userPrefix = chalk.blue('👤');
+const assistantPrefix = chalk.green('🤖');
+const toolPrefix = chalk.yellow('🛠️');
+const errorPrefix = chalk.red('❗');
+const systemPrefix = chalk.gray('⚙️');
+
+// --- Configuration ---
+// IMPORTANT: Set your OpenRouter API key as an environment variable
+const OPENROUTER_API_KEY = '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';
 const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL_ID = 'openai/gpt-4.1-nano'; // Model that is more reliable with function calling
 
-// Message types
+// Consider using a more modern model that supports tool use well.
+// Examples: 'openai/gpt-3.5-turbo', 'openai/gpt-4o-mini', 'anthropic/claude-3-haiku-20240307'
+// 'openai/codex-mini' is deprecated and may not work reliably or at all.
+const MODEL_ID = 'openai/codex-mini'; // Updated to a more current model
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// All file operations will be relative to this directory
+const WORKSPACE_DIRECTORY_NAME = 'file_assistant_workspace';
+const WORKSPACE_DIRECTORY = path.resolve(__dirname, WORKSPACE_DIRECTORY_NAME);
+
+const MAX_CONVERSATION_LENGTH = 100; // Max messages before considering a reset
+
+// --- Types ---
 type Role = 'system' | 'user' | 'assistant' | 'tool';
 
 interface Message {
   role: Role;
-  content: string;
+  content: string | null; // Content can be null for assistant messages with only tool_calls
   name?: string;
   tool_call_id?: string;
   tool_calls?: ToolCall[];
@@ -21,9 +45,10 @@ interface Message {
 
 interface ToolCall {
   id: string;
+  type: 'function'; // Standard type for tool calls
   function: {
     name: string;
-    arguments: string;
+    arguments: string; // Arguments are a JSON string
   };
 }
 
@@ -32,23 +57,23 @@ interface Tool {
   function: {
     name: string;
     description: string;
-    parameters: any;
+    parameters: any; // JSON schema for parameters
   };
 }
 
-// Define our file operation tools
+// --- Tool Definitions ---
 const tools: Tool[] = [
   {
     type: 'function',
     function: {
       name: 'think',
-      description: 'Use this tool to document your thinking process. This allows you to work through complex problems step by step, reason about different approaches, and clarify your understanding. The content is only visible to you. When you use this tool, you must use it 3 times in a row. This is to ensure deeper and proper thinking.',
+      description: 'Use this tool to document your thinking process, plan steps, or reason about complex problems. The content is only visible to you (logged internally). Use this before undertaking complex multi-step tasks. When you use this tool, you are encouraged to use it multiple times if it helps clarify your plan for a complex task.',
       parameters: {
         type: 'object',
         properties: {
-          thoughts: { 
-            type: 'string', 
-            description: 'Your detailed thinking process, reasoning, or working through a problem.' 
+          thoughts: {
+            type: 'string',
+            description: 'Your detailed thinking process, reasoning, or step-by-step plan.'
           }
         },
         required: ['thoughts']
@@ -59,25 +84,25 @@ const tools: Tool[] = [
     type: 'function',
     function: {
       name: 'listFiles',
-      description: 'List files and/or folders in a directory with optional filtering.',
+      description: `List files and/or folders in a directory within the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
       parameters: {
         type: 'object',
         properties: {
-          path: { 
-            type: 'string', 
-            description: 'The directory path to list from. Defaults to current directory if not specified.' 
+          path: {
+            type: 'string',
+            description: `The directory path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}'). Defaults to the workspace root if not specified.`
           },
           extension: {
             type: 'string',
-            description: 'Optional file extension to filter by (e.g., "txt", "js", etc.). Only applies to files, not folders. Do not include the dot.'  
+            description: 'Optional file extension to filter by (e.g., "txt", "js"). Do not include the dot.'
           },
           includeFiles: {
             type: 'boolean',
-            description: 'Whether to include files in the result. Defaults to true.'
+            description: 'Whether to include files. Defaults to true.'
           },
           includeFolders: {
             type: 'boolean',
-            description: 'Whether to include folders/directories in the result. Defaults to false.'
+            description: 'Whether to include folders. Defaults to true.'
           }
         },
         required: []
@@ -88,13 +113,13 @@ const tools: Tool[] = [
     type: 'function',
     function: {
       name: 'readFile',
-      description: 'Read the text content of a file from disk.',
+      description: `Read the text content of a file from the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
       parameters: {
         type: 'object',
         properties: {
-          path: { 
-            type: 'string', 
-            description: 'The filesystem path to the file.' 
+          path: {
+            type: 'string',
+            description: `The file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').`
           }
         },
         required: ['path']
@@ -105,12 +130,12 @@ const tools: Tool[] = [
     type: 'function',
     function: {
       name: 'writeFile',
-      description: 'Write text content to a file on disk, creating or overwriting it.',
+      description: `Write text content to a file in the workspace ('${WORKSPACE_DIRECTORY_NAME}'), creating or overwriting it.`,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'The file path to write to.' },
-          content: { type: 'string', description: 'The text content to write into the file.' }
+          path: { type: 'string', description: `The file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
+          content: { type: 'string', description: 'The text content to write.' }
         },
         required: ['path', 'content']
       }
@@ -120,15 +145,15 @@ const tools: Tool[] = [
     type: 'function',
     function: {
       name: 'updateFile',
-      description: 'Update an existing file by appending or modifying content.',
+      description: `Update an existing file in the workspace ('${WORKSPACE_DIRECTORY_NAME}') by appending or prepending content.`,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'The file path to update.' },
-          content: { type: 'string', description: 'The content to append or modify.' },
-          operation: { 
-            type: 'string', 
-            description: 'The operation to perform: "append" to add at end, "prepend" to add at beginning.',
+          path: { type: 'string', description: `The file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
+          content: { type: 'string', description: 'The content to add.' },
+          operation: {
+            type: 'string',
+            description: 'Operation: "append" or "prepend".',
             enum: ['append', 'prepend']
           }
         },
@@ -140,11 +165,11 @@ const tools: Tool[] = [
     type: 'function',
     function: {
       name: 'deleteFile',
-      description: 'Delete a file from disk.',
+      description: `Delete a file from the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'The file path to delete.' }
+          path: { type: 'string', description: `The file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` }
         },
         required: ['path']
       }
@@ -154,11 +179,11 @@ const tools: Tool[] = [
     type: 'function',
     function: {
       name: 'createFolder',
-      description: 'Create a new folder or directory.',
+      description: `Create a new folder in the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'The folder path to create.' }
+          path: { type: 'string', description: `The folder path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` }
         },
         required: ['path']
       }
@@ -168,12 +193,12 @@ const tools: Tool[] = [
     type: 'function',
     function: {
       name: 'deleteFolder',
-      description: 'Delete a folder and all its contents.',
+      description: `Delete a folder (and its contents if specified) from the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'The folder path to delete.' },
-          recursive: { type: 'boolean', description: 'Whether to delete non-empty directories recursively. Defaults to false for safety.' }
+          path: { type: 'string', description: `The folder path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
+          recursive: { type: 'boolean', description: 'Set to true to delete non-empty folders. Defaults to false.' }
         },
         required: ['path']
       }
@@ -183,12 +208,12 @@ const tools: Tool[] = [
     type: 'function',
     function: {
       name: 'renameFolder',
-      description: 'Rename a folder.',
+      description: `Rename a folder in the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
       parameters: {
         type: 'object',
         properties: {
-          oldPath: { type: 'string', description: 'The current path of the folder.' },
-          newPath: { type: 'string', description: 'The new path for the folder.' }
+          oldPath: { type: 'string', description: `Current folder path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
+          newPath: { type: 'string', description: `New folder path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` }
         },
         required: ['oldPath', 'newPath']
       }
@@ -198,12 +223,12 @@ const tools: Tool[] = [
     type: 'function',
     function: {
       name: 'renameFile',
-      description: 'Rename a file.',
+      description: `Rename a file in the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
       parameters: {
         type: 'object',
         properties: {
-          oldPath: { type: 'string', description: 'The current path of the file.' },
-          newPath: { type: 'string', description: 'The new path for the file.' }
+          oldPath: { type: 'string', description: `Current file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
+          newPath: { type: 'string', description: `New file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` }
         },
         required: ['oldPath', 'newPath']
       }
@@ -213,23 +238,19 @@ const tools: Tool[] = [
     type: 'function',
     function: {
       name: 'readTodo',
-      description: 'Read the current todo list from todo.md file.',
-      parameters: {
-        type: 'object',
-        properties: {},
-        required: []
-      }
+      description: `Read the current todo list from 'todo.md' in the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
+      parameters: { type: 'object', properties: {}, required: [] }
     }
   },
   {
     type: 'function',
     function: {
       name: 'writeTodo',
-      description: 'Create or completely replace the todo.md file with new content.',
+      description: `Create or replace 'todo.md' in the workspace ('${WORKSPACE_DIRECTORY_NAME}') with new content.`,
       parameters: {
         type: 'object',
         properties: {
-          content: { type: 'string', description: 'The new content for the todo.md file.' }
+          content: { type: 'string', description: "The new content for 'todo.md'." }
         },
         required: ['content']
       }
@@ -239,14 +260,14 @@ const tools: Tool[] = [
     type: 'function',
     function: {
       name: 'updateTodoItem',
-      description: 'Update the status of a specific todo item.',
+      description: `Update a todo item in 'todo.md' in the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
       parameters: {
         type: 'object',
         properties: {
-          itemIndex: { type: 'number', description: 'The line number (starting from 1) of the todo item to update.' },
-          newStatus: { 
-            type: 'string', 
-            description: 'The new status to apply to the todo item.', 
+          itemIndex: { type: 'number', description: 'Line number (1-based) of the todo item.' },
+          newStatus: {
+            type: 'string',
+            description: 'New status.',
             enum: ['pending', 'in_progress', 'completed', 'cancelled']
           },
           newText: { type: 'string', description: 'Optional new text for the todo item.' }
@@ -257,555 +278,545 @@ const tools: Tool[] = [
   }
 ];
 
-// Helper function to validate conversation history and remove dangling tool calls
+// --- Helper Functions ---
+
+/**
+ * Resolves a user-provided path against the workspace directory and ensures it's safe.
+ * @param userPath Path relative to the workspace directory.
+ * @returns Absolute, normalized path within the workspace.
+ * @throws Error if path is outside the workspace or invalid.
+ */
+function getSafeWorkspacePath(userPath: string = '.'): string {
+  const resolvedPath = path.resolve(WORKSPACE_DIRECTORY, userPath);
+  if (!resolvedPath.startsWith(WORKSPACE_DIRECTORY)) {
+    throw new Error(`Path traversal attempt detected. Path must be within '${WORKSPACE_DIRECTORY_NAME}'.`);
+  }
+  return resolvedPath;
+}
+
+/**
+ * Validates conversation history, primarily for dangling tool calls.
+ * If an assistant message requested tool calls but not all have corresponding tool responses,
+ * this function attempts to clean up the history by removing the problematic assistant
+ * message and the user message that might have triggered it.
+ */
 function validateConversationHistory(messages: Message[]): Message[] {
-  // Build a map of tool call IDs and their responses
   const toolCallIds = new Set<string>();
   const toolResponseIds = new Set<string>();
-  
-  // First pass: Collect all tool call IDs and response IDs
+
   for (const message of messages) {
-    // Track tool calls from assistant
     if (message.role === 'assistant' && message.tool_calls) {
-      for (const call of message.tool_calls) {
-        toolCallIds.add(call.id);
-      }
+      message.tool_calls.forEach(call => toolCallIds.add(call.id));
     }
-    
-    // Track tool responses
     if (message.role === 'tool' && message.tool_call_id) {
       toolResponseIds.add(message.tool_call_id);
     }
   }
-  
-  // Find unanswered tool calls
+
   const unansweredCalls = new Set<string>();
   for (const id of toolCallIds) {
     if (!toolResponseIds.has(id)) {
       unansweredCalls.add(id);
     }
   }
-  
-  // If all tool calls have responses, return the original messages
+
   if (unansweredCalls.size === 0) {
     return messages;
   }
-  
-  // Otherwise, filter out the problematic messages
+
+  console.log(systemPrefix + chalk.yellowBright(' Detected unanswered tool calls. Attempting to clean conversation history.'));
+
   const cleanedMessages: Message[] = [];
-  let skipNextAssistant = false;
-  
-  for (let i = 0; i < messages.length; i++) {
+  // Iterate backwards to find the first problematic sequence
+  // and truncate from there. A simpler approach than selective removal.
+  let lastValidIndex = messages.length;
+  for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
-    
-    // Skip assistant messages with unanswered tool calls
     if (message.role === 'assistant' && message.tool_calls) {
-      const hasUnansweredCall = message.tool_calls.some(call => unansweredCalls.has(call.id));
-      if (hasUnansweredCall) {
-        skipNextAssistant = true;
-        continue;
+      const hasUnanswered = message.tool_calls.some(call => unansweredCalls.has(call.id));
+      if (hasUnanswered) {
+        // Truncate from this message. If this assistant message was preceded by a user message,
+        // that user message (at i-1) effectively becomes the last message.
+        lastValidIndex = i; // Remove this assistant message and everything after
+        break;
       }
     }
-    
-    // Skip the user message that triggered the problematic assistant message
-    if (skipNextAssistant && message.role === 'user') {
-      skipNextAssistant = false;
-      continue;
-    }
-    
-    // Skip tool responses for unanswered calls (shouldn't happen, but just in case)
-    if (message.role === 'tool' && message.tool_call_id && unansweredCalls.has(message.tool_call_id)) {
-      continue;
-    }
-    
-    // Add all other messages
-    cleanedMessages.push(message);
   }
-  
-  return cleanedMessages;
+  // If the problematic assistant message was triggered by a user message,
+  // and we want to remove that user message too, we'd adjust `lastValidIndex`.
+  // For instance, if messages[lastValidIndex-1] is 'user', set lastValidIndex = i-1.
+  // Current simpler logic: just remove the problematic assistant call and subsequent messages.
+  // If lastValidIndex points to the problematic assistant message, slice up to it.
+  if (lastValidIndex < messages.length) {
+      // If the message at lastValidIndex is the problematic assistant message,
+      // and it was preceded by a user message (messages[lastValidIndex-1]),
+      // we might want to remove that user message as well.
+      // For now, let's just remove the assistant message and anything after.
+      // If the user message that triggered it should also be removed:
+      if (lastValidIndex > 0 && messages[lastValidIndex -1].role === 'user') {
+          return messages.slice(0, lastValidIndex -1);
+      }
+      return messages.slice(0, lastValidIndex);
+  }
+
+
+  return messages; // Should not be reached if unansweredCalls.size > 0 and logic above is correct
 }
 
-// Tool implementations
-const toolImplementations: Record<string, Function> = {
-  think: async (args: any) => {
-    // Just log the thinking internally but don't expose to user
-    console.log('Agent thinking: ' + args.thoughts.substring(0, 100) + (args.thoughts.length > 100 ? '...' : ''));
-    return { success: true, message: 'Thinking completed.', thoughts: args.thoughts };
+
+// --- Tool Implementations ---
+const toolImplementations: Record<string, (args: any) => Promise<any>> = {
+  think: async (args: { thoughts: string }) => {
+    console.log(toolPrefix + chalk.magentaBright(` Agent thinking: ${args.thoughts.substring(0, 150)}${args.thoughts.length > 150 ? '...' : ''}`));
+    return { success: true, message: 'Thinking process documented.', thoughts_received: args.thoughts };
   },
-  createFolder: async (args: any) => {
+  listFiles: async (args: { path?: string; extension?: string; includeFiles?: boolean; includeFolders?: boolean }) => {
     try {
-      const safePath = path.normalize(args.path).replace(/^\.\.\//g, '');
+      const dirPath = getSafeWorkspacePath(args.path || '.');
+      const includeFiles = args.includeFiles !== false; // Default true
+      const includeFolders = args.includeFolders !== false; // Default true (changed from false for more utility)
+
+      const entries = await fs.readdir(dirPath, { withFileTypes: true });
+      let files: string[] = [];
+      if (includeFiles) {
+        files = entries.filter(e => e.isFile()).map(e => e.name);
+        if (args.extension) {
+          const ext = args.extension.startsWith('.') ? args.extension : `.${args.extension}`;
+          files = files.filter(f => f.endsWith(ext));
+        }
+      }
+      let folders: string[] = [];
+      if (includeFolders) {
+        folders = entries.filter(e => e.isDirectory()).map(e => e.name);
+      }
+      return {
+        directory: path.relative(WORKSPACE_DIRECTORY, dirPath) || '.',
+        files,
+        folders,
+        fileCount: files.length,
+        folderCount: folders.length,
+      };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+  readFile: async (args: { path: string }) => {
+    try {
+      const safePath = getSafeWorkspacePath(args.path);
+      const content = await fs.readFile(safePath, 'utf-8');
+      return { success: true, path: args.path, content };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+  writeFile: async (args: { path: string; content: string }) => {
+    try {
+      const safePath = getSafeWorkspacePath(args.path);
+      await fs.mkdir(path.dirname(safePath), { recursive: true }); // Ensure parent directory exists
+      await fs.writeFile(safePath, args.content, 'utf-8');
+      return { success: true, message: `File '${args.path}' written successfully.` };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+  updateFile: async (args: { path: string; content: string; operation: 'append' | 'prepend' }) => {
+    try {
+      const safePath = getSafeWorkspacePath(args.path);
+      let existingContent = '';
+      try {
+        existingContent = await fs.readFile(safePath, 'utf-8');
+      } catch (readError: any) {
+        if (readError.code !== 'ENOENT') throw readError; // Rethrow if not 'file not found'
+        // If file doesn't exist, treat as new write for append/prepend
+      }
+
+      const newContent = args.operation === 'append'
+        ? existingContent + args.content
+        : args.content + existingContent;
+
+      await fs.mkdir(path.dirname(safePath), { recursive: true });
+      await fs.writeFile(safePath, newContent, 'utf-8');
+      return { success: true, message: `File '${args.path}' updated successfully.` };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+  deleteFile: async (args: { path: string }) => {
+    try {
+      const safePath = getSafeWorkspacePath(args.path);
+      await fs.unlink(safePath);
+      return { success: true, message: `File '${args.path}' deleted successfully.` };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+  createFolder: async (args: { path: string }) => {
+    try {
+      const safePath = getSafeWorkspacePath(args.path);
       await fs.mkdir(safePath, { recursive: true });
-      return { success: true, message: `Folder ${args.path} created successfully.` };
+      return { success: true, message: `Folder '${args.path}' created successfully.` };
     } catch (error: any) {
       return { error: error.message };
     }
   },
-  deleteFolder: async (args: any) => {
+  deleteFolder: async (args: { path: string; recursive?: boolean }) => {
     try {
-      const safePath = path.normalize(args.path).replace(/^\.\.\//g, '');
-      await fs.rm(safePath, { recursive: args.recursive === true, force: args.recursive === true });
-      return { success: true, message: `Folder ${args.path} deleted successfully.` };
+      const safePath = getSafeWorkspacePath(args.path);
+      await fs.rm(safePath, { recursive: !!args.recursive, force: !!args.recursive }); // force is implied by recursive for non-empty
+      return { success: true, message: `Folder '${args.path}' deleted successfully.` };
     } catch (error: any) {
       return { error: error.message };
     }
   },
-  renameFolder: async (args: any) => {
+  renameFolder: async (args: { oldPath: string; newPath: string }) => {
     try {
-      const safeOldPath = path.normalize(args.oldPath).replace(/^\.\.\//g, '');
-      const safeNewPath = path.normalize(args.newPath).replace(/^\.\.\//g, '');
+      const safeOldPath = getSafeWorkspacePath(args.oldPath);
+      const safeNewPath = getSafeWorkspacePath(args.newPath);
+      await fs.mkdir(path.dirname(safeNewPath), { recursive: true });
       await fs.rename(safeOldPath, safeNewPath);
-      return { success: true, message: `Folder renamed from ${args.oldPath} to ${args.newPath} successfully.` };
+      return { success: true, message: `Folder renamed from '${args.oldPath}' to '${args.newPath}'.` };
     } catch (error: any) {
       return { error: error.message };
     }
   },
-  renameFile: async (args: any) => {
+  renameFile: async (args: { oldPath: string; newPath: string }) => {
     try {
-      const safeOldPath = path.normalize(args.oldPath).replace(/^\.\.\//g, '');
-      const safeNewPath = path.normalize(args.newPath).replace(/^\.\.\//g, '');
+      const safeOldPath = getSafeWorkspacePath(args.oldPath);
+      const safeNewPath = getSafeWorkspacePath(args.newPath);
+      await fs.mkdir(path.dirname(safeNewPath), { recursive: true });
       await fs.rename(safeOldPath, safeNewPath);
-      return { success: true, message: `File renamed from ${args.oldPath} to ${args.newPath} successfully.` };
+      return { success: true, message: `File renamed from '${args.oldPath}' to '${args.newPath}'.` };
     } catch (error: any) {
       return { error: error.message };
     }
   },
   readTodo: async () => {
     try {
-      const todoPath = 'todo.md';
+      const todoPath = getSafeWorkspacePath('todo.md');
       try {
-        // Check if file exists
         await fs.access(todoPath);
+        const content = await fs.readFile(todoPath, 'utf-8');
+        return { success: true, content, exists: true };
       } catch {
-        // If file doesn't exist, return empty todo list
-        return { content: '', exists: false, message: 'No todo list found. Use writeTodo to create one.' };
+        return { success: true, content: '', exists: false, message: "No 'todo.md' found. Use writeTodo to create one." };
       }
-      
-      // Read the file if it exists
-      const content = await fs.readFile(todoPath, 'utf-8');
-      return { content, exists: true };
     } catch (error: any) {
       return { error: error.message };
     }
   },
-  writeTodo: async (args: any) => {
+  writeTodo: async (args: { content: string }) => {
     try {
-      const todoPath = 'todo.md';
+      const todoPath = getSafeWorkspacePath('todo.md');
       await fs.writeFile(todoPath, args.content, 'utf-8');
-      return { success: true, message: 'Todo list has been created/updated successfully.' };
+      return { success: true, message: "'todo.md' created/updated." };
     } catch (error: any) {
       return { error: error.message };
     }
   },
-  updateTodoItem: async (args: any) => {
+  updateTodoItem: async (args: { itemIndex: number; newStatus: string; newText?: string }) => {
     try {
-      const todoPath = 'todo.md';
-      
-      // Check if file exists
+      const todoPath = getSafeWorkspacePath('todo.md');
+      let content;
       try {
-        await fs.access(todoPath);
+        content = await fs.readFile(todoPath, 'utf-8');
       } catch {
-        return { error: 'Todo list does not exist. Use writeTodo to create one first.' };
+        return { error: "'todo.md' not found. Use writeTodo first." };
       }
-      
-      // Read the current content
-      const content = await fs.readFile(todoPath, 'utf-8');
+
       const lines = content.split('\n');
-      
-      // Check if the specified line exists
       if (args.itemIndex < 1 || args.itemIndex > lines.length) {
-        return { error: `Invalid item index. The todo list has ${lines.length} items.` };
+        return { error: `Invalid itemIndex. 'todo.md' has ${lines.length} lines.` };
       }
-      
-      // Update the specific line with new status
-      const lineIndex = args.itemIndex - 1; // Convert to 0-based index
+
+      const lineIndex = args.itemIndex - 1;
       const currentLine = lines[lineIndex];
-      
-      // Parse the line to check its current format
-      let newLine = '';
-      
-      // Status markers we recognize
-      const statusMarkers = {
-        pending: '[ ]',
-        in_progress: '[/]',
-        completed: '[x]',
-        cancelled: '[~]'
+
+      const statusMarkers: Record<string, string> = {
+        pending: '[ ]', in_progress: '[/]', completed: '[x]', cancelled: '[~]'
       };
-      
-      // If newText is provided, use it, otherwise keep the current text
-      const newText = args.newText || currentLine.replace(/^\s*(?:\[([ x/~])\]\s*)?/, '');
-      
-      // Create new line with appropriate status marker
-      const status = args.newStatus as keyof typeof statusMarkers;
-      newLine = `- ${statusMarkers[status]} ${newText}`;
-      
-      // Replace the line
-      lines[lineIndex] = newLine;
-      
-      // Write back the updated content
+      const marker = statusMarkers[args.newStatus as keyof typeof statusMarkers];
+      if (!marker) return { error: `Invalid newStatus: ${args.newStatus}` };
+
+      const textContent = args.newText !== undefined
+        ? args.newText
+        : currentLine.replace(/^\s*-\s*\[[ x/~]\]\s*/, '').trim();
+
+      lines[lineIndex] = `- ${marker} ${textContent}`;
       await fs.writeFile(todoPath, lines.join('\n'), 'utf-8');
-      
-      return { 
-        success: true, 
-        message: `Todo item ${args.itemIndex} updated to status '${args.newStatus}'.`,
-        updatedLine: newLine
-      };
-    } catch (error: any) {
-      return { error: error.message };
-    }
-  },
-  listFiles: async (args: any) => {
-    try {
-      // Default to current directory if path not provided
-      const dirPath = args.path ? path.normalize(args.path).replace(/^\.\.\//, '') : '.';
-      
-      // Set defaults for includeFiles and includeFolders
-      const includeFiles = args.includeFiles !== false; // Default to true
-      const includeFolders = args.includeFolders === true; // Default to false
-      
-      // Read the directory contents
-      const entries = await fs.readdir(dirPath, { withFileTypes: true });
-      
-      // Process files if needed
-      let files: string[] = [];
-      if (includeFiles) {
-        files = entries
-          .filter(entry => entry.isFile())
-          .map(entry => entry.name);
-        
-        // Apply extension filter if provided
-        if (args.extension) {
-          const extension = args.extension.startsWith('.') ? args.extension : `.${args.extension}`;
-          files = files.filter(filename => filename.endsWith(extension));
-        }
-      }
-      
-      // Process folders if needed
-      let folders: string[] = [];
-      if (includeFolders) {
-        folders = entries
-          .filter(entry => entry.isDirectory())
-          .map(entry => entry.name);
-      }
-      
-      return { 
-        directory: dirPath,
-        files: files,
-        folders: folders,
-        fileCount: files.length,
-        folderCount: folders.length,
-        totalCount: files.length + folders.length
-      };
-    } catch (error: any) {
-      return { error: error.message };
-    }
-  },
-  readFile: async (args: any) => {
-    try {
-      // Sanitize path to prevent filesystem access outside of desired directory
-      const safePath = path.normalize(args.path).replace(/^\.\.\//, '');
-      const content = await fs.readFile(safePath, 'utf-8');
-      return { content };
-    } catch (error: any) {
-      return { error: error.message };
-    }
-  },
-  
-  writeFile: async (args: any) => {
-    try {
-      const safePath = path.normalize(args.path).replace(/^\.\.\//, '');
-      await fs.writeFile(safePath, args.content, 'utf-8');
-      return { success: true, message: `File ${args.path} written successfully.` };
-    } catch (error: any) {
-      return { error: error.message };
-    }
-  },
-  
-  updateFile: async (args: any) => {
-    try {
-      const safePath = path.normalize(args.path).replace(/^\.\.\//, '');
-      const existingContent = await fs.readFile(safePath, 'utf-8');
-      let newContent = existingContent;
-      
-      if (args.operation === 'append') {
-        newContent = existingContent + args.content;
-      } else if (args.operation === 'prepend') {
-        newContent = args.content + existingContent;
-      }
-      
-      await fs.writeFile(safePath, newContent, 'utf-8');
-      return { success: true, message: `File ${args.path} updated successfully.` };
-    } catch (error: any) {
-      return { error: error.message };
-    }
-  },
-  
-  deleteFile: async (args: any) => {
-    try {
-      const safePath = path.normalize(args.path).replace(/^\.\.\//, '');
-      await fs.unlink(safePath);
-      return { success: true, message: `File ${args.path} deleted successfully.` };
+      return { success: true, message: `Todo item ${args.itemIndex} updated.`, updatedLine: lines[lineIndex] };
     } catch (error: any) {
       return { error: error.message };
     }
   }
 };
 
-// Agent loop function to handle tool calling
+// --- Agent Loop ---
 async function agentLoop(messages: Message[]): Promise<Message[]> {
-  let loopMessages = [...messages];
-  // Always start with a clean slate for pending tool calls
-  let pendingToolCalls: {id: string; completed: boolean}[] = [];
-  
-  // Ensure there are no dangling tool call messages
-  const filteredMessages = validateConversationHistory(loopMessages);
-  if (filteredMessages.length !== loopMessages.length) {
-    console.log('Fixed conversation history by removing dangling tool calls');
-    loopMessages = filteredMessages;
+  let currentMessages = [...messages];
+
+  // Initial validation of history before starting the loop.
+  // This is especially useful if the script restarts with existing history.
+  const validatedMessages = validateConversationHistory(currentMessages);
+  if (validatedMessages.length !== currentMessages.length) {
+      console.log(systemPrefix + chalk.yellowBright(' Conversation history was cleaned by validateConversationHistory.'));
+      currentMessages = validatedMessages;
+      // If history was truncated, it's possible the last message is not suitable for continuing.
+      // Consider if we need to re-prompt user or take other action. For now, proceed.
   }
-  
+
+
   while (true) {
     try {
-      // Check if we have any pending tool calls that haven't been responded to
-      const hasPendingToolCalls = pendingToolCalls.some(call => !call.completed);
-      if (hasPendingToolCalls) {
-        console.error('Error: There are pending tool calls without responses');
-        throw new Error('Tool call responses are missing. Please try again with a new request.');
-      }
-      console.log('Thinking...');
-      
-      // Step 1: Call OpenRouter API with current messages
+      console.log(systemPrefix + chalk.cyan(' Calling LLM...'));
+
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'HTTP-Referer': 'https://openrouter.ai/'
+          'X-Title': 'File Assistant CLI', // Optional: Helps identify your app on OpenRouter
+          // 'HTTP-Referer': 'YOUR_SITE_URL', // Optional: If you have one
         },
         body: JSON.stringify({
           model: MODEL_ID,
           tools: tools,
-          messages: loopMessages
+          messages: currentMessages,
         })
       });
-      
-      const data = await response.json();
+
+      const responseData = await response.json();
 
       if (!response.ok) {
-        console.error('API Error:', JSON.stringify(data, null, 2));
-        // Check if this is a OpenAI tool_call_id error and provide more details
-        if (data.error?.metadata?.raw && data.error.metadata.raw.includes('tool_call_id')) {
-          console.error('Tool call ID error detected. Full error:', data.error.metadata.raw);
-          throw new Error('Tool call sequence error. The conversation will be reset.');
-        }
-        throw new Error(`API error: ${data.error?.message || 'Unknown error'}`);
+        console.error(errorPrefix + chalk.redBright(' API Error:'), JSON.stringify(responseData, null, 2));
+        const apiErrorMessage = responseData.error?.message || 'Unknown API error';
+         if (responseData.error?.code === 'invalid_api_key') {
+           throw new Error (`Invalid OpenRouter API Key. Please check your OPENROUTER_API_KEY environment variable. Details: ${apiErrorMessage}`);
+         }
+        throw new Error(`API error: ${apiErrorMessage}`);
       }
-      
-      // Validate the response structure
-      if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
-        console.error('Invalid API response format:', data);
-        throw new Error('API returned an invalid response format. No choices found.');
+
+      if (!responseData.choices || !Array.isArray(responseData.choices) || responseData.choices.length === 0) {
+        console.error(errorPrefix + chalk.redBright(' Invalid API response format:'), responseData);
+        throw new Error('API returned an invalid response (no choices).');
       }
-      
-      // Step 2: Get assistant's response
-      const assistantMessage = data.choices[0].message;
+
+      const assistantMessage = responseData.choices[0].message as Message;
       if (!assistantMessage) {
-        throw new Error('API response did not contain a valid message');
+        throw new Error('API response did not contain a valid message.');
       }
-      
-      loopMessages.push(assistantMessage);
-      
-      // Step 3: Check if the assistant wants to use a tool
-      if (assistantMessage.tool_calls && Array.isArray(assistantMessage.tool_calls) && assistantMessage.tool_calls.length > 0) {
-        // Important: Only process ONE tool call at a time to avoid sequence errors
-        const toolCall = assistantMessage.tool_calls[0];
-        console.log(`Received ${assistantMessage.tool_calls.length} tool call(s), processing only the first one`);
-        
-        // Track only the first tool call
-        pendingToolCalls = [{ id: toolCall.id, completed: false }];
-        
-        // Validate tool call has the required properties
-        if (!toolCall || !toolCall.function || !toolCall.id) {
-          throw new Error('Invalid tool call format from API');
-        }
-        
-        const toolName = toolCall.function.name;
-        let args;
-        try {
-          args = JSON.parse(toolCall.function.arguments);
-        } catch (e: any) {
-          throw new Error(`Failed to parse tool arguments: ${e.message}`);
-        }
-        
-        // Log the tool call details for debugging
-        console.log(`Processing tool call ID: ${toolCall.id} for tool: ${toolName}`);
-        
-        console.log(`Using tool: ${toolName}`);
-        
-        // Step 4: Execute the tool
-        if (toolImplementations[toolName]) {
-          const result = await toolImplementations[toolName](args);
-          
-          // Step 5: Add tool response to messages
-          loopMessages.push({
-            role: 'tool',
-            name: toolName,
-            tool_call_id: toolCall.id,
-            content: JSON.stringify(result)
-          });
-          
-          // Mark this tool call as completed
-          const toolIndex = pendingToolCalls.findIndex(call => call.id === toolCall.id);
-          if (toolIndex !== -1) {
-            pendingToolCalls[toolIndex].completed = true;
+
+      currentMessages.push(assistantMessage);
+
+      if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
+        console.log(toolPrefix + chalk.yellow(` Assistant requests ${assistantMessage.tool_calls.length} tool call(s).`));
+        const toolResponses: Message[] = [];
+
+        for (const toolCall of assistantMessage.tool_calls) {
+          if (toolCall.type !== 'function') {
+            console.warn(errorPrefix + ` Unsupported tool call type: ${toolCall.type}. Skipping.`);
+            toolResponses.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              name: 'unknown_tool_type',
+              content: JSON.stringify({ error: `Unsupported tool call type: ${toolCall.type}` })
+            });
+            continue;
           }
+
+          const toolName = toolCall.function.name;
+          console.log(toolPrefix + chalk.yellow(` Executing tool: ${toolName} (ID: ${toolCall.id})`));
           
-          // Continue the loop for more potential tool calls
-        } else {
-          // Tool not found
-          loopMessages.push({
-            role: 'tool',
-            name: toolName,
-            tool_call_id: toolCall.id,
-            content: JSON.stringify({ error: `Tool ${toolName} not found.` })
-          });
-          
-          // Mark this tool call as completed even though it failed
-          const toolIndex = pendingToolCalls.findIndex(call => call.id === toolCall.id);
-          if (toolIndex !== -1) {
-            pendingToolCalls[toolIndex].completed = true;
+          let args;
+          try {
+            args = JSON.parse(toolCall.function.arguments);
+          } catch (e: any) {
+            console.error(errorPrefix + chalk.red(` Failed to parse arguments for ${toolName}: ${e.message}`));
+            toolResponses.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              name: toolName,
+              content: JSON.stringify({ error: `Invalid arguments format: ${e.message}` })
+            });
+            continue; // Move to next tool call
+          }
+
+          const implementation = toolImplementations[toolName];
+          if (implementation) {
+            try {
+              const result = await implementation(args);
+              toolResponses.push({
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                name: toolName,
+                content: JSON.stringify(result)
+              });
+            } catch (toolError: any) {
+              console.error(errorPrefix + chalk.red(` Error during ${toolName} execution: ${toolError.message}`));
+              toolResponses.push({
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                name: toolName,
+                content: JSON.stringify({ error: `Tool execution failed: ${toolError.message}` })
+              });
+            }
+          } else {
+            console.warn(errorPrefix + chalk.red(` Tool ${toolName} not implemented.`));
+            toolResponses.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              name: toolName,
+              content: JSON.stringify({ error: `Tool ${toolName} not found.` })
+            });
           }
         }
+        currentMessages.push(...toolResponses);
+        // Continue loop to send tool responses back to LLM
       } else {
-        // No more tool calls, break the loop
-        console.log('Finished processing');
-        // Reset pending tool calls since we're done
-        pendingToolCalls = [];
-        return loopMessages;
+        // No tool calls, assistant has provided a direct response.
+        return currentMessages; // End of this interaction turn
       }
     } catch (error: any) {
-      // Handle errors
-      console.error('Agent loop error:', error);
-      
-      // Reset pending tool calls on error
-      pendingToolCalls = [];
-      
-      // If the error is from the OpenRouter API and mentions tool calls
-      const errorMessage = error.message || 'Unknown error';
-      const isToolCallError = errorMessage.includes('tool_call_id') || 
-                              errorMessage.includes('tool_calls');
-      
-      const userFriendlyMessage = isToolCallError
-        ? 'There was an issue processing your request. Please try again with a new command.'
-        : `Error: ${errorMessage}. Please try again.`;
-      
-      loopMessages.push({
-        role: 'assistant',
-        content: userFriendlyMessage
+      console.error(errorPrefix + chalk.redBright(' Agent loop error:'), error.message);
+      // Add an error message to the history for the AI to see, or for user context.
+      currentMessages.push({
+        role: 'assistant', // Or 'system' if preferred for error reporting
+        content: `An error occurred: ${error.message}. The user might need to rephrase or simplify the request.`
       });
-      
-      return loopMessages;
+      return currentMessages; // Return current messages, including the error, to break the loop.
     }
   }
 }
 
-// Main function to run the CLI
+// --- Main CLI Function ---
 async function main() {
-  // Check for API key
   if (!OPENROUTER_API_KEY) {
-    console.error('Error: OPENROUTER_API_KEY environment variable is required!');
-    console.log('Please set it with: export OPENROUTER_API_KEY=your_api_key');
+    console.error(errorPrefix + chalk.redBright('FATAL ERROR: OPENROUTER_API_KEY environment variable is not set!'));
+    console.log(chalk.yellow('Please set it, e.g., by running: export OPENROUTER_API_KEY="your_actual_api_key"'));
     process.exit(1);
   }
 
-  console.log('======================================');
-  console.log('🤖 Welcome to File Assistant CLI 🤖');
-  console.log('======================================');
-  console.log('Available commands:');
-  console.log('  /exit  - Exit the application');
-  console.log('  /reset - Reset the conversation history');
-  console.log('\nAvailable features:');
-  console.log('  • File operations: read, write, update, delete, rename');
-  console.log('  • Folder operations: create, delete, rename, list');
-  console.log('  • Todo management: create and track tasks');
-  console.log('\nFor best results, perform one file or folder operation at a time.\n');
+  // Ensure workspace directory exists
+  try {
+    await fs.mkdir(WORKSPACE_DIRECTORY, { recursive: true });
+    console.log(systemPrefix + `Workspace directory: ${chalk.gray(WORKSPACE_DIRECTORY)}`);
+  } catch (error: any) {
+    console.error(errorPrefix + chalk.redBright(`Failed to create workspace directory '${WORKSPACE_DIRECTORY}': ${error.message}`));
+    process.exit(1);
+  }
 
-  // Initialize messages with system message
+  console.log(chalk.bold.magentaBright('\n======================================'));
+  console.log(chalk.bold.magentaBright('🤖 Welcome to File Assistant CLI 🤖'));
+  console.log(chalk.bold.magentaBright('======================================'));
+  console.log(chalk.cyan('\nAvailable commands:'));
+  console.log(chalk.cyan('  /exit  - Exit the application'));
+  console.log(chalk.cyan('  /reset - Reset the conversation history'));
+  console.log(chalk.cyan('\nWorking with files in: ') + chalk.yellow(WORKSPACE_DIRECTORY_NAME));
+  console.log(chalk.cyan('Tip: For complex tasks, break them down or ask the assistant to plan first.\n'));
+
   let messages: Message[] = [
     {
       role: 'system',
-      content: 'You are a file assistant. You can list, read, write, update, or delete files and folders using the provided tools. You must follow these strict rules:\n\n1. When asked to create or modify files or folders, ALWAYS use the appropriate tool rather than just saying you would do it.\n\n2. Only process ONE file or folder operation at a time. If the user asks to create or modify multiple files or folders, tell them you\'ll handle them one by one and start with the first one only.\n\n3. Use the listFiles tool when users want to see what files are available in a directory. You can filter by file extension (e.g., ".txt", ".js") if needed.\n\n4. Respond with a summary of changes or answer the user\'s question in a friendly, helpful manner.\n\n5. If a request is unclear, politely ask for clarification.\n\n6. Make extensive use of the "think" tool to work through complex problems or tasks. The thinking tool allows you to reason step by step without showing all your work to the user. Always use this tool for planning before taking action.\n\n7. For folder operations, use createFolder, deleteFolder, and renameFolder tools. When deleting folders that contain files, set recursive:true to delete all contents.\n\n8. For file renaming, use the renameFile tool with oldPath and newPath parameters.\n\n9. When given a complex task, ALWAYS follow this workflow:\n   a. Use the think tool first to plan your approach\n   b. Use writeTodo to create a todo.md file listing the steps required\n   c. Execute each step one by one\n   d. Use readTodo to check progress and updateTodoItem to mark items as in_progress or completed as you go\n   e. Continue until all items are complete\n\nThe todo list should use the following format for status tracking:\n- [ ] Pending task\n- [/] Task in progress\n- [x] Completed task\n- [~] Cancelled task\n\nIMPORTANT: The system can only handle one file or folder operation per turn. Never try to perform multiple operations in a single response. Do not finish generating your outputs until the assigned task from the user is complete, if the user asks you to do something, continue doing it until the task is done, no need to stop to ask the user if you should continue.'
+      content: `You are a helpful file assistant operating strictly within a sandboxed workspace directory named '${WORKSPACE_DIRECTORY_NAME}'. Your primary function is to manage files and folders (list, read, write, update, delete, rename) and maintain a 'todo.md' list within this workspace using the provided tools.
+
+Key Instructions:
+1.  **Always use tools for actions:** When asked to perform any file/folder operation or todo management, you MUST use the corresponding tool. Do not just state you will do it.
+2.  **Workspace only:** All paths for file/folder operations are relative to the '${WORKSPACE_DIRECTORY_NAME}' workspace. You cannot access files outside this sandbox.
+3.  **One main operation at a time:** If a user requests multiple distinct file operations (e.g., "create file A and delete folder B"), address them sequentially. You can use multiple tool calls in one response if they are part of a single logical step (e.g., read a file, then write a modified version).
+4.  **Clarify ambiguity:** If a request is unclear, ask for clarification.
+5.  **Planning with 'think':** For complex requests or multi-step tasks, use the 'think' tool first to outline your plan. This helps in structuring your approach.
+6.  **Todo Management:**
+    *   Use 'readTodo', 'writeTodo', and 'updateTodoItem' for managing 'todo.md'.
+    *   Todo format: \`- [ ] Task description\`, \`- [/] In progress\`, \`- [x] Completed\`, \`- [~] Cancelled\`.
+7.  **Be concise but clear:** Summarize actions taken and results. If an error occurs with a tool, report it.
+8.  **Continuity:** If a task requires multiple steps/turns, continue until it's complete or the user directs otherwise. You don't need to ask for permission to continue an already assigned multi-step task unless you encounter an issue or ambiguity.
+9.  **List files/folders:** Use 'listFiles' tool to inspect directory contents. Default is to list both files and folders in the workspace root.
+10. **Error Handling:** If a tool call returns an error, inform the user about the error and suggest potential reasons or next steps. Do not attempt the same failed operation repeatedly without modification or clarification.
+`
     }
   ];
 
-  // Main conversation loop
   while (true) {
     const { userInput } = await inquirer.prompt([
       {
         type: 'input',
         name: 'userInput',
-        message: 'Ask me to work with files:',
-        prefix: '👤'
+        message: 'Your request:',
+        prefix: userPrefix,
       }
     ]);
 
-    // Check for commands or empty input
     if (userInput.toLowerCase() === '/exit') {
-      console.log('\nThank you for using File Assistant CLI. Goodbye! 👋');
+      console.log(chalk.magentaBright('\nThank you for using File Assistant CLI. Goodbye! 👋'));
       break;
-    } else if (userInput.toLowerCase() === '/reset') {
-      console.log('Resetting conversation history...');
+    }
+    if (userInput.toLowerCase() === '/reset') {
+      console.log(systemPrefix + chalk.yellowBright(' Resetting conversation history...'));
       messages = [messages[0]]; // Keep only the system message
+      console.log(systemPrefix + chalk.green(' Conversation reset.'));
       continue;
-    } else if (!userInput.trim()) {
-      console.log('Please enter a command or question');
+    }
+    if (!userInput.trim()) {
+      console.log(chalk.yellow('Please enter a command or question.'));
       continue;
     }
 
-    // Reset messages to just the system message and new user input when there was a previous error
-    const previousMessage = messages[messages.length - 1];
+    // Logic for resetting conversation if it's in a bad state or too long
+    const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+    const hadRecentError = lastMessage?.role === 'assistant' && lastMessage.content?.toLowerCase().includes('error occurred');
     
-    // Check if the last message was an error or if there's a tool call error in the history
-    const hasErrorMessage = previousMessage && 
-                           previousMessage.role === 'assistant' && 
-                           previousMessage.content.includes('Error');
-    
-    // Check for unresolved tool calls in the conversation history
-    const hasUnresolvedToolCalls = messages.some(msg => 
-      msg.role === 'assistant' && msg.tool_calls && 
-      // For each tool call in the message, check if we have a response
-      msg.tool_calls.some(call => 
-        !messages.some(m => m.role === 'tool' && m.tool_call_id === call.id)
-      )
+    const hasUnresolvedToolCallsInHistory = messages.some(msg =>
+        msg.role === 'assistant' && msg.tool_calls &&
+        msg.tool_calls.some(call =>
+            !messages.some(m => m.role === 'tool' && m.tool_call_id === call.id)
+        )
     );
-    
-    // Check if conversation is getting too long (can lead to context issues)
-    const isConversationTooLong = messages.length > 20;
-    
-    if (hasErrorMessage || hasUnresolvedToolCalls || isConversationTooLong) {
-      console.log('Resetting conversation history...');
+
+    if (hadRecentError || hasUnresolvedToolCallsInHistory || messages.length > MAX_CONVERSATION_LENGTH) {
+      let reason = "";
+      if (hadRecentError) reason = "due to a recent error";
+      else if (hasUnresolvedToolCallsInHistory) reason = "due to unresolved tool calls";
+      else if (messages.length > MAX_CONVERSATION_LENGTH) reason = "conversation is too long";
+      
+      console.log(systemPrefix + chalk.yellowBright(` Resetting conversation history ${reason}. Starting fresh with your input.`));
       messages = [
-        messages[0], // Keep the system message
-        { role: 'user', content: userInput } // Add new user message
+        messages[0], // System message
+        { role: 'user', content: userInput }
       ];
     } else {
-      // Just add the user message to continuing conversation
       messages.push({ role: 'user', content: userInput });
     }
+    
+    // Clean history just before sending if validateConversationHistory made changes
+    // This step is more about ensuring the history sent to agentLoop is clean.
+    const potentiallyCleanedMessages = validateConversationHistory(messages);
+    if (potentiallyCleanedMessages.length < messages.length) {
+        console.log(systemPrefix + chalk.yellowBright(' Applied validation cleanup to messages before calling agent.'));
+        messages = potentiallyCleanedMessages;
+        // If user message was removed by cleanup, we might need to re-add current userInput or re-prompt.
+        // For now, this state might be rare if other resets catch issues first.
+        // Let's ensure the latest userInput is part of messages if it was cleaned away.
+        const lastMsg = messages[messages.length -1];
+        if (!lastMsg || lastMsg.role !== 'user' || lastMsg.content !== userInput) {
+            messages.push({ role: 'user', content: userInput });
+        }
+    }
 
-    // Run the agent loop
-    messages = await agentLoop(messages);
 
-    // Display the assistant's response (last message)
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage.role === 'assistant') {
-      console.log(`\n🤖 ${lastMessage.content}\n`);
+    const updatedMessages = await agentLoop(messages);
+    messages = updatedMessages; // Persist updated messages for next turn
+
+    const finalAssistantMessage = messages[messages.length - 1];
+    if (finalAssistantMessage?.role === 'assistant' && finalAssistantMessage.content) {
+      console.log(`\n${assistantPrefix} ${chalk.whiteBright(finalAssistantMessage.content)}\n`);
+    } else if (finalAssistantMessage?.role === 'assistant' && !finalAssistantMessage.content && finalAssistantMessage.tool_calls) {
+      // This case should ideally not happen if agentLoop always results in a final text response or error.
+      // It means the AI ended on a tool_call without further textual response.
+      console.log(`\n${assistantPrefix} ${chalk.italic.gray('[Assistant ended with tool calls, awaiting next step or error in loop.]')}\n`);
     }
   }
 }
 
-// Run the application
 main().catch(error => {
-  console.error('Application error:', error);
+  console.error(errorPrefix + chalk.redBright(' CRITICAL APPLICATION ERROR:'), error);
   process.exit(1);
 });

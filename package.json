@@ -2,7 +2,7 @@
   "name": "openrouter_agent",
   "version": "1.0.0",
   "main": "index.js",
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
@@ -14,7 +14,8 @@
   "description": "OpenRouter Agent for file operations",
   "dependencies": {
     "@openrouter/ai-sdk-provider": "^0.4.5",
-    "inquirer": "^9.2.12",
+    "chalk": "^4.1.2",
+    "inquirer": "^9.3.7",
     "node-fetch": "^3.3.2"
   },
   "devDependencies": {
