@@ -3,6 +3,7 @@ import inquirer from 'inquirer';
 import * as fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url'; // To get __dirname in ESM
+import { URL } from 'url'; // <--- ADDED for URL parsing
 
 // For colored output (optional, install with: npm install chalk@4.1.2)
 // If you prefer not to use chalk, remove these lines and the chalk.xyz calls
@@ -15,29 +16,25 @@ const systemPrefix = chalk.gray('⚙️');
 
 // --- Configuration ---
 // IMPORTANT: Set your OpenRouter API key as an environment variable
-const OPENROUTER_API_KEY = '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';
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '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'; // Fallback for testing, ensure it's set in env
 const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-// Consider using a more modern model that supports tool use well.
-// Examples: 'openai/gpt-3.5-turbo', 'openai/gpt-4o-mini', 'anthropic/claude-3-haiku-20240307'
-// 'openai/codex-mini' is deprecated and may not work reliably or at all.
-const MODEL_ID = 'openai/codex-mini'; // Updated to a more current model
+const MODEL_ID = 'openai/gpt-4o-mini'; // Updated to a more current model
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// All file operations will be relative to this directory
 const WORKSPACE_DIRECTORY_NAME = 'file_assistant_workspace';
 const WORKSPACE_DIRECTORY = path.resolve(__dirname, WORKSPACE_DIRECTORY_NAME);
 
-const MAX_CONVERSATION_LENGTH = 100; // Max messages before considering a reset
+const MAX_CONVERSATION_LENGTH = 100;
 
 // --- Types ---
 type Role = 'system' | 'user' | 'assistant' | 'tool';
 
 interface Message {
   role: Role;
-  content: string | null; // Content can be null for assistant messages with only tool_calls
+  content: string | null;
   name?: string;
   tool_call_id?: string;
   tool_calls?: ToolCall[];
@@ -45,10 +42,10 @@ interface Message {
 
 interface ToolCall {
   id: string;
-  type: 'function'; // Standard type for tool calls
+  type: 'function';
   function: {
     name: string;
-    arguments: string; // Arguments are a JSON string
+    arguments: string;
   };
 }
 
@@ -57,7 +54,7 @@ interface Tool {
   function: {
     name: string;
     description: string;
-    parameters: any; // JSON schema for parameters
+    parameters: any;
   };
 }
 
@@ -234,6 +231,27 @@ const tools: Tool[] = [
       }
     }
   },
+  { // NEW TOOL DEFINITION
+    type: 'function',
+    function: {
+      name: 'fetchWebsiteContent',
+      description: 'Fetches the raw text content (primarily HTML or plain text) from a given public URL. Use this to get information from websites. The response will be a string of the page\'s content, which might be HTML code. Content may be truncated if too long (default 10,000 characters). This tool cannot access local files or internal/private network resources.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: {
+            type: 'string',
+            description: 'The public HTTP or HTTPS URL to fetch content from (e.g., "https://www.example.com"). Must be a fully qualified URL.'
+          },
+          maxLength: {
+            type: 'number',
+            description: 'Optional. Maximum number of characters to return from the beginning of the content. Defaults to 10000. Min 100, Max 50000.'
+          }
+        },
+        required: ['url']
+      }
+    }
+  },
   {
     type: 'function',
     function: {
@@ -281,6 +299,53 @@ const tools: Tool[] = [
 // --- Helper Functions ---
 
 /**
+ * Checks if a URL is safe to fetch (public, http/https, not local/private).
+ * @param urlString The URL to check.
+ * @returns True if the URL is considered safe, false otherwise.
+ */
+function isSafeUrl(urlString: string): boolean {
+  try {
+    const parsedUrl = new URL(urlString);
+    const hostname = parsedUrl.hostname;
+
+    // 1. Protocol check (allow http and https)
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      console.warn(errorPrefix + chalk.yellow(`isSafeUrl: Disallowed protocol: ${parsedUrl.protocol}`));
+      return false;
+    }
+
+    // 2. Disallow localhost and loopback
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') {
+      console.warn(errorPrefix + chalk.yellow(`isSafeUrl: Disallowed hostname (localhost/loopback): ${hostname}`));
+      return false;
+    }
+
+    // 3. Disallow private IP ranges (IPv4 and IPv6 ULA)
+    // IPv4: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+    // IPv6: fd00::/8 (ULA)
+    if (/^10\./.test(hostname) ||
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname) ||
+        /^192\.168\./.test(hostname) ||
+        /^fd[0-9a-f]{2}:/i.test(hostname) // Case insensitive for IPv6
+       ) {
+      console.warn(errorPrefix + chalk.yellow(`isSafeUrl: Disallowed hostname (private IP): ${hostname}`));
+      return false;
+    }
+    
+    // 4. Disallow .local TLD (often used for mDNS/Bonjour on local networks)
+    if (hostname.endsWith('.local')) {
+        console.warn(errorPrefix + chalk.yellow(`isSafeUrl: Disallowed hostname (.local TLD): ${hostname}`));
+        return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.warn(errorPrefix + chalk.yellow(`isSafeUrl: Invalid URL format: ${urlString}`));
+    return false;
+  }
+}
+
+/**
  * Resolves a user-provided path against the workspace directory and ensures it's safe.
  * @param userPath Path relative to the workspace directory.
  * @returns Absolute, normalized path within the workspace.
@@ -296,9 +361,6 @@ function getSafeWorkspacePath(userPath: string = '.'): string {
 
 /**
  * Validates conversation history, primarily for dangling tool calls.
- * If an assistant message requested tool calls but not all have corresponding tool responses,
- * this function attempts to clean up the history by removing the problematic assistant
- * message and the user message that might have triggered it.
  */
 function validateConversationHistory(messages: Message[]): Message[] {
   const toolCallIds = new Set<string>();
@@ -326,41 +388,26 @@ function validateConversationHistory(messages: Message[]): Message[] {
 
   console.log(systemPrefix + chalk.yellowBright(' Detected unanswered tool calls. Attempting to clean conversation history.'));
 
-  const cleanedMessages: Message[] = [];
-  // Iterate backwards to find the first problematic sequence
-  // and truncate from there. A simpler approach than selective removal.
   let lastValidIndex = messages.length;
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (message.role === 'assistant' && message.tool_calls) {
       const hasUnanswered = message.tool_calls.some(call => unansweredCalls.has(call.id));
       if (hasUnanswered) {
-        // Truncate from this message. If this assistant message was preceded by a user message,
-        // that user message (at i-1) effectively becomes the last message.
-        lastValidIndex = i; // Remove this assistant message and everything after
+        lastValidIndex = i;
         break;
       }
     }
   }
-  // If the problematic assistant message was triggered by a user message,
-  // and we want to remove that user message too, we'd adjust `lastValidIndex`.
-  // For instance, if messages[lastValidIndex-1] is 'user', set lastValidIndex = i-1.
-  // Current simpler logic: just remove the problematic assistant call and subsequent messages.
-  // If lastValidIndex points to the problematic assistant message, slice up to it.
+  
   if (lastValidIndex < messages.length) {
-      // If the message at lastValidIndex is the problematic assistant message,
-      // and it was preceded by a user message (messages[lastValidIndex-1]),
-      // we might want to remove that user message as well.
-      // For now, let's just remove the assistant message and anything after.
-      // If the user message that triggered it should also be removed:
       if (lastValidIndex > 0 && messages[lastValidIndex -1].role === 'user') {
           return messages.slice(0, lastValidIndex -1);
       }
       return messages.slice(0, lastValidIndex);
   }
 
-
-  return messages; // Should not be reached if unansweredCalls.size > 0 and logic above is correct
+  return messages;
 }
 
 
@@ -373,8 +420,8 @@ const toolImplementations: Record<string, (args: any) => Promise<any>> = {
   listFiles: async (args: { path?: string; extension?: string; includeFiles?: boolean; includeFolders?: boolean }) => {
     try {
       const dirPath = getSafeWorkspacePath(args.path || '.');
-      const includeFiles = args.includeFiles !== false; // Default true
-      const includeFolders = args.includeFolders !== false; // Default true (changed from false for more utility)
+      const includeFiles = args.includeFiles !== false;
+      const includeFolders = args.includeFolders !== false;
 
       const entries = await fs.readdir(dirPath, { withFileTypes: true });
       let files: string[] = [];
@@ -412,7 +459,7 @@ const toolImplementations: Record<string, (args: any) => Promise<any>> = {
   writeFile: async (args: { path: string; content: string }) => {
     try {
       const safePath = getSafeWorkspacePath(args.path);
-      await fs.mkdir(path.dirname(safePath), { recursive: true }); // Ensure parent directory exists
+      await fs.mkdir(path.dirname(safePath), { recursive: true });
       await fs.writeFile(safePath, args.content, 'utf-8');
       return { success: true, message: `File '${args.path}' written successfully.` };
     } catch (error: any) {
@@ -426,8 +473,7 @@ const toolImplementations: Record<string, (args: any) => Promise<any>> = {
       try {
         existingContent = await fs.readFile(safePath, 'utf-8');
       } catch (readError: any) {
-        if (readError.code !== 'ENOENT') throw readError; // Rethrow if not 'file not found'
-        // If file doesn't exist, treat as new write for append/prepend
+        if (readError.code !== 'ENOENT') throw readError;
       }
 
       const newContent = args.operation === 'append'
@@ -462,7 +508,7 @@ const toolImplementations: Record<string, (args: any) => Promise<any>> = {
   deleteFolder: async (args: { path: string; recursive?: boolean }) => {
     try {
       const safePath = getSafeWorkspacePath(args.path);
-      await fs.rm(safePath, { recursive: !!args.recursive, force: !!args.recursive }); // force is implied by recursive for non-empty
+      await fs.rm(safePath, { recursive: !!args.recursive, force: !!args.recursive });
       return { success: true, message: `Folder '${args.path}' deleted successfully.` };
     } catch (error: any) {
       return { error: error.message };
@@ -488,6 +534,64 @@ const toolImplementations: Record<string, (args: any) => Promise<any>> = {
       return { success: true, message: `File renamed from '${args.oldPath}' to '${args.newPath}'.` };
     } catch (error: any) {
       return { error: error.message };
+    }
+  },
+  // NEW TOOL IMPLEMENTATION
+  fetchWebsiteContent: async (args: { url: string; maxLength?: number }) => {
+    let { url, maxLength = 10000 } = args; 
+    maxLength = Math.max(100, Math.min(maxLength, 50000)); 
+
+    if (!isSafeUrl(url)) {
+      const reason = `Invalid or disallowed URL: ${url}. Must be a public HTTP/HTTPS URL and not point to local or private network resources.`;
+      return { error: reason };
+    }
+
+    try {
+      console.log(toolPrefix + chalk.cyanBright(` Fetching URL: ${url} (max ${maxLength} chars)`));
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); 
+
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'FileAssistantCLI-Agent/1.0 (AI Agent)',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7'
+        }
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        return {
+          error: `Failed to fetch URL. Status: ${response.status} ${response.statusText}`,
+          statusCode: response.status,
+          url
+        };
+      }
+
+      const contentType = response.headers.get('content-type') || 'unknown';
+      let textContent = await response.text();
+      let message = `Successfully fetched content from ${url}. Content-Type: ${contentType}.`;
+
+      if (textContent.length > maxLength) {
+        textContent = textContent.substring(0, maxLength);
+        message = `Successfully fetched content from ${url}. Content-Type: ${contentType}. Content truncated to ${maxLength} characters.`;
+      }
+
+      return {
+        success: true,
+        url,
+        statusCode: response.status,
+        contentType,
+        content: textContent,
+        message
+      };
+
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        return { error: `Request to ${url} timed out after 15 seconds.` };
+      }
+      console.error(errorPrefix + chalk.red(` Error fetching ${url}: ${error.stack || error.message}`));
+      return { error: `Error fetching URL ${url}: ${error.message}. Check server logs for details.` };
     }
   },
   readTodo: async () => {
@@ -554,16 +658,11 @@ const toolImplementations: Record<string, (args: any) => Promise<any>> = {
 async function agentLoop(messages: Message[]): Promise<Message[]> {
   let currentMessages = [...messages];
 
-  // Initial validation of history before starting the loop.
-  // This is especially useful if the script restarts with existing history.
   const validatedMessages = validateConversationHistory(currentMessages);
   if (validatedMessages.length !== currentMessages.length) {
       console.log(systemPrefix + chalk.yellowBright(' Conversation history was cleaned by validateConversationHistory.'));
       currentMessages = validatedMessages;
-      // If history was truncated, it's possible the last message is not suitable for continuing.
-      // Consider if we need to re-prompt user or take other action. For now, proceed.
   }
-
 
   while (true) {
     try {
@@ -574,8 +673,7 @@ async function agentLoop(messages: Message[]): Promise<Message[]> {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'X-Title': 'File Assistant CLI', // Optional: Helps identify your app on OpenRouter
-          // 'HTTP-Referer': 'YOUR_SITE_URL', // Optional: If you have one
+          'X-Title': 'File Assistant CLI', 
         },
         body: JSON.stringify({
           model: MODEL_ID,
@@ -637,7 +735,7 @@ async function agentLoop(messages: Message[]): Promise<Message[]> {
               name: toolName,
               content: JSON.stringify({ error: `Invalid arguments format: ${e.message}` })
             });
-            continue; // Move to next tool call
+            continue;
           }
 
           const implementation = toolImplementations[toolName];
@@ -670,32 +768,28 @@ async function agentLoop(messages: Message[]): Promise<Message[]> {
           }
         }
         currentMessages.push(...toolResponses);
-        // Continue loop to send tool responses back to LLM
       } else {
-        // No tool calls, assistant has provided a direct response.
-        return currentMessages; // End of this interaction turn
+        return currentMessages;
       }
     } catch (error: any) {
       console.error(errorPrefix + chalk.redBright(' Agent loop error:'), error.message);
-      // Add an error message to the history for the AI to see, or for user context.
       currentMessages.push({
-        role: 'assistant', // Or 'system' if preferred for error reporting
+        role: 'assistant',
         content: `An error occurred: ${error.message}. The user might need to rephrase or simplify the request.`
       });
-      return currentMessages; // Return current messages, including the error, to break the loop.
+      return currentMessages;
     }
   }
 }
 
 // --- Main CLI Function ---
 async function main() {
-  if (!OPENROUTER_API_KEY) {
-    console.error(errorPrefix + chalk.redBright('FATAL ERROR: OPENROUTER_API_KEY environment variable is not set!'));
+  if (!OPENROUTER_API_KEY || OPENROUTER_API_KEY === 'sk-or-v1-YOUR-KEY-HERE') { // Added a check for placeholder key
+    console.error(errorPrefix + chalk.redBright('FATAL ERROR: OPENROUTER_API_KEY environment variable is not set or is a placeholder!'));
     console.log(chalk.yellow('Please set it, e.g., by running: export OPENROUTER_API_KEY="your_actual_api_key"'));
     process.exit(1);
   }
 
-  // Ensure workspace directory exists
   try {
     await fs.mkdir(WORKSPACE_DIRECTORY, { recursive: true });
     console.log(systemPrefix + `Workspace directory: ${chalk.gray(WORKSPACE_DIRECTORY)}`);
@@ -716,12 +810,12 @@ async function main() {
   let messages: Message[] = [
     {
       role: 'system',
-      content: `You are a helpful file assistant operating strictly within a sandboxed workspace directory named '${WORKSPACE_DIRECTORY_NAME}'. Your primary function is to manage files and folders (list, read, write, update, delete, rename) and maintain a 'todo.md' list within this workspace using the provided tools.
+      content: `You are a helpful file assistant operating strictly within a sandboxed workspace directory named '${WORKSPACE_DIRECTORY_NAME}'. Your primary function is to manage files and folders (list, read, write, update, delete, rename) and maintain a 'todo.md' list within this workspace using the provided tools. You can also fetch content from public websites.
 
 Key Instructions:
-1.  **Always use tools for actions:** When asked to perform any file/folder operation or todo management, you MUST use the corresponding tool. Do not just state you will do it.
+1.  **Always use tools for actions:** When asked to perform any file/folder operation, todo management, or website fetching, you MUST use the corresponding tool. Do not just state you will do it.
 2.  **Workspace only:** All paths for file/folder operations are relative to the '${WORKSPACE_DIRECTORY_NAME}' workspace. You cannot access files outside this sandbox.
-3.  **One main operation at a time:** If a user requests multiple distinct file operations (e.g., "create file A and delete folder B"), address them sequentially. You can use multiple tool calls in one response if they are part of a single logical step (e.g., read a file, then write a modified version).
+3.  **One main operation at a time:** If a user requests multiple distinct operations (e.g., "create file A and fetch website B"), address them sequentially. You can use multiple tool calls in one response if they are part of a single logical step.
 4.  **Clarify ambiguity:** If a request is unclear, ask for clarification.
 5.  **Planning with 'think':** For complex requests or multi-step tasks, use the 'think' tool first to outline your plan. This helps in structuring your approach.
 6.  **Todo Management:**
@@ -731,6 +825,7 @@ Key Instructions:
 8.  **Continuity:** If a task requires multiple steps/turns, continue until it's complete or the user directs otherwise. You don't need to ask for permission to continue an already assigned multi-step task unless you encounter an issue or ambiguity.
 9.  **List files/folders:** Use 'listFiles' tool to inspect directory contents. Default is to list both files and folders in the workspace root.
 10. **Error Handling:** If a tool call returns an error, inform the user about the error and suggest potential reasons or next steps. Do not attempt the same failed operation repeatedly without modification or clarification.
+11. **Fetch Website Content:** Use the 'fetchWebsiteContent' tool to retrieve raw content (e.g., HTML, text) from public websites. Provide a full URL (e.g., "https://example.com"). The content might be truncated if it's very long. You will receive the raw data (like HTML source code); you may need to describe how to extract specific information from it or summarize it based on the user's request. This tool CANNOT access local network resources or private IP addresses. Only public HTTP/HTTPS URLs are allowed.
 `
     }
   ];
@@ -751,7 +846,7 @@ Key Instructions:
     }
     if (userInput.toLowerCase() === '/reset') {
       console.log(systemPrefix + chalk.yellowBright(' Resetting conversation history...'));
-      messages = [messages[0]]; // Keep only the system message
+      messages = [messages[0]];
       console.log(systemPrefix + chalk.green(' Conversation reset.'));
       continue;
     }
@@ -760,7 +855,6 @@ Key Instructions:
       continue;
     }
 
-    // Logic for resetting conversation if it's in a bad state or too long
     const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
     const hadRecentError = lastMessage?.role === 'assistant' && lastMessage.content?.toLowerCase().includes('error occurred');
     
@@ -779,38 +873,30 @@ Key Instructions:
       
       console.log(systemPrefix + chalk.yellowBright(` Resetting conversation history ${reason}. Starting fresh with your input.`));
       messages = [
-        messages[0], // System message
+        messages[0],
         { role: 'user', content: userInput }
       ];
     } else {
       messages.push({ role: 'user', content: userInput });
     }
     
-    // Clean history just before sending if validateConversationHistory made changes
-    // This step is more about ensuring the history sent to agentLoop is clean.
     const potentiallyCleanedMessages = validateConversationHistory(messages);
     if (potentiallyCleanedMessages.length < messages.length) {
         console.log(systemPrefix + chalk.yellowBright(' Applied validation cleanup to messages before calling agent.'));
         messages = potentiallyCleanedMessages;
-        // If user message was removed by cleanup, we might need to re-add current userInput or re-prompt.
-        // For now, this state might be rare if other resets catch issues first.
-        // Let's ensure the latest userInput is part of messages if it was cleaned away.
         const lastMsg = messages[messages.length -1];
         if (!lastMsg || lastMsg.role !== 'user' || lastMsg.content !== userInput) {
             messages.push({ role: 'user', content: userInput });
         }
     }
 
-
     const updatedMessages = await agentLoop(messages);
-    messages = updatedMessages; // Persist updated messages for next turn
+    messages = updatedMessages;
 
     const finalAssistantMessage = messages[messages.length - 1];
     if (finalAssistantMessage?.role === 'assistant' && finalAssistantMessage.content) {
       console.log(`\n${assistantPrefix} ${chalk.whiteBright(finalAssistantMessage.content)}\n`);
     } else if (finalAssistantMessage?.role === 'assistant' && !finalAssistantMessage.content && finalAssistantMessage.tool_calls) {
-      // This case should ideally not happen if agentLoop always results in a final text response or error.
-      // It means the AI ended on a tool_call without further textual response.
       console.log(`\n${assistantPrefix} ${chalk.italic.gray('[Assistant ended with tool calls, awaiting next step or error in loop.]')}\n`);
     }
   }
