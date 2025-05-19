@@ -14,6 +14,7 @@
   "description": "OpenRouter Agent for file operations",
   "dependencies": {
     "@openrouter/ai-sdk-provider": "^0.4.5",
+    "@prisma/client": "^6.8.2",
     "chalk": "^4.1.2",
     "inquirer": "^9.3.7",
     "node-fetch": "^3.3.2"
@@ -21,6 +22,7 @@
   "devDependencies": {
     "@types/inquirer": "^9.0.7",
     "@types/node": "^20.17.47",
+    "prisma": "^6.8.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   }
