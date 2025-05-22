@@ -19,7 +19,7 @@ const systemPrefix = chalk.gray('⚙️');
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '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'; // Fallback for testing, ensure it's set in env
 const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-const MODEL_ID = 'openai/gpt-4o-mini'; // Updated to a more current model
+const MODEL_ID = 'openai/gpt-4.1-mini'; // Updated to a more current model
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -572,10 +572,10 @@ const toolImplementations: Record<string, (args: any) => Promise<any>> = {
       let textContent = await response.text();
       let message = `Successfully fetched content from ${url}. Content-Type: ${contentType}.`;
 
-      if (textContent.length > maxLength) {
-        textContent = textContent.substring(0, maxLength);
-        message = `Successfully fetched content from ${url}. Content-Type: ${contentType}. Content truncated to ${maxLength} characters.`;
-      }
+      // if (textContent.length > maxLength) {
+      //   textContent = textContent.substring(0, maxLength);
+      //   message = `Successfully fetched content from ${url}. Content-Type: ${contentType}. Content truncated to ${maxLength} characters.`;
+      // }
 
       return {
         success: true,
