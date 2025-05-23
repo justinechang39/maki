@@ -4,6 +4,14 @@ import { WORKSPACE_DIRECTORY_NAME } from '../core/config.js';
 import { getSafeWorkspacePath } from '../core/utils.js';
 import type { Tool } from '../core/types.js';
 
+const formatBytes = (bytes: number): string => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
 export const fileTools: Tool[] = [
   {
     type: 'function',
@@ -196,6 +204,24 @@ export const fileTools: Tool[] = [
           path: { type: 'string', description: `File or folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must exist.` }
         },
         required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getFileSizes',
+      description: `SIZE ANALYSIS: Get file sizes for multiple files at once. Perfect for analyzing storage usage, comparing file sizes, or getting size information for a batch of files.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          paths: {
+            type: 'array',
+            items: { type: 'string' },
+            description: `Array of file paths within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Each path must be an existing file.`
+          }
+        },
+        required: ['paths']
       }
     }
   },
@@ -506,6 +532,50 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
           executable: !!(stats.mode & 0o111),
           mode: '0' + (stats.mode & parseInt('777', 8)).toString(8)
         }
+      };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+
+  getFileSizes: async (args: { paths: string[] }) => {
+    try {
+      const results = [];
+      let totalSize = 0;
+      
+      for (const filePath of args.paths) {
+        try {
+          const safePath = getSafeWorkspacePath(filePath);
+          const stats = await fs.stat(safePath);
+          
+          if (!stats.isFile()) {
+            results.push({
+              path: filePath,
+              error: 'Not a file (directory or other type)'
+            });
+          } else {
+            results.push({
+              path: filePath,
+              size: stats.size,
+              sizeFormatted: formatBytes(stats.size)
+            });
+            totalSize += stats.size;
+          }
+        } catch (error: any) {
+          results.push({
+            path: filePath,
+            error: error.message
+          });
+        }
+      }
+      
+      return {
+        success: true,
+        files: results,
+        totalSize,
+        totalSizeFormatted: formatBytes(totalSize),
+        fileCount: args.paths.length,
+        successCount: results.filter(r => !r.error).length
       };
     } catch (error: any) {
       return { error: error.message };

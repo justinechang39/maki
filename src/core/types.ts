@@ -13,6 +13,7 @@ export interface DisplayMessage extends Message {
   showToolCalls?: boolean;
   isThinking?: boolean;
   isProcessing?: boolean;
+  isToolResult?: boolean;
 }
 
 export interface ToolCall {

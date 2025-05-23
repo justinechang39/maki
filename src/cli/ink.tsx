@@ -114,6 +114,98 @@ const App: React.FC<AppProps> = () => {
   const isCreatingThread = useRef(false);
   const { exit } = useApp();
 
+  // Format tool results for better display (no useCallback to avoid circular dependency)
+  const formatToolResult = (toolName: string, args: any, result: any): string => {
+    if (result.error) {
+      return `❌ ${toolName} failed: ${result.error}`;
+    }
+
+    if (!result.success && result.message) {
+      return `⚠️ ${toolName}: ${result.message}`;
+    }
+
+    // Format based on tool type
+    switch (toolName) {
+      case 'listFiles':
+        const fileList = result.files?.slice(0, 10).map((f: string) => `  📄 ${f}`).join('\n') || '';
+        const moreFiles = result.files?.length > 10 ? `\n  ... and ${result.files.length - 10} more files` : '';
+        return `✅ Listed ${result.fileCount || 0} files in ${result.directory || args.path || '.'}\n${fileList}${moreFiles}`;
+      
+      case 'listFolders':
+        const folderList = result.folders?.slice(0, 10).map((f: string) => `  📁 ${f}`).join('\n') || '';
+        const moreFolders = result.folders?.length > 10 ? `\n  ... and ${result.folders.length - 10} more folders` : '';
+        return `✅ Listed ${result.folderCount || 0} folders in ${result.directory || args.path || '.'}\n${folderList}${moreFolders}`;
+      
+      case 'readFile':
+        const content = result.content || '';
+        const preview = content.length > 200 ? content.substring(0, 200) + '...' : content;
+        const lines = content.split('\n').length;
+        return `✅ Read file ${result.path || args.path} (${lines} lines, ${content.length} chars)\n${preview ? `Preview:\n${preview}` : ''}`;
+      
+      case 'writeFile':
+        return `✅ File written: ${args.path} (${args.content?.length || 0} characters)`;
+      
+      case 'updateFile':
+        return `✅ File updated: ${args.path} (${args.operation} operation${result.linesModified ? `, ${result.linesModified} lines modified` : ''})`;
+      
+      case 'deleteFile':
+        return `✅ File deleted: ${args.path}`;
+      
+      case 'createFolder':
+        return `✅ Folder created: ${args.path}`;
+      
+      case 'deleteFolder':
+        return `✅ Folder deleted: ${args.path}${args.recursive ? ' (recursive)' : ''}`;
+      
+      case 'searchFiles':
+        const resultCount = result.resultCount || 0;
+        const resultPreview = result.results?.slice(0, 5).map((r: any) => 
+          `  ${r.type === 'filename' ? '📄' : '📝'} ${r.path}${r.line ? `:${r.line}` : ''}${r.preview ? ` - ${r.preview}` : ''}`
+        ).join('\n') || '';
+        return `✅ Found ${resultCount} matches for "${args.query}"\n${resultPreview}${resultCount > 5 ? `\n  ... and ${resultCount - 5} more matches` : ''}`;
+      
+      case 'getFileInfo':
+        return `✅ File info for ${result.path}:\n  Type: ${result.type}\n  Size: ${result.size} bytes\n  Modified: ${new Date(result.modified).toLocaleString()}`;
+      
+      case 'copyFile':
+      case 'renameFile':
+        return `✅ ${result.message}`;
+      
+      case 'todo_read':
+        const todos = result.todos || [];
+        const todoPreview = todos.slice(0, 5).map((t: any) => 
+          `  ${t.status === 'completed' ? '✅' : t.status === 'in-progress' ? '🔄' : '⭕'} ${t.content}`
+        ).join('\n') || '  No todos found';
+        return `✅ Current todos (${todos.length}):\n${todoPreview}${todos.length > 5 ? `\n  ... and ${todos.length - 5} more todos` : ''}`;
+      
+      case 'todo_write':
+        return `✅ Updated todo list (${args.todos?.length || 0} items)`;
+      
+      case 'parseCSV':
+        const rowCount = result.data?.length || 0;
+        const colCount = result.headers?.length || 0;
+        return `✅ Parsed CSV: ${rowCount} rows, ${colCount} columns\n  Headers: ${result.headers?.slice(0, 5).join(', ')}${colCount > 5 ? '...' : ''}`;
+      
+      case 'writeCSV':
+        return `✅ CSV written to ${args.path} (${result.rowCount || 0} rows)`;
+      
+      case 'fetchWebContent':
+        const contentLength = result.content?.length || 0;
+        const title = result.title ? `\n  Title: ${result.title}` : '';
+        return `✅ Fetched ${args.url} (${contentLength} chars)${title}`;
+      
+      default:
+        // Generic success message with result preview
+        if (result.success || result.message) {
+          const message = result.message || 'Operation completed successfully';
+          const hasData = Object.keys(result).some(key => !['success', 'message'].includes(key));
+          const dataPreview = hasData ? `\n  Result: ${JSON.stringify(result, null, 2).substring(0, 200)}${JSON.stringify(result).length > 200 ? '...' : ''}` : '';
+          return `✅ ${message}${dataPreview}`;
+        }
+        return `✅ ${toolName} completed`;
+    }
+  };
+
   // Load threads on mount
   useEffect(() => {
     const loadThreads = async () => {
@@ -296,7 +388,7 @@ const App: React.FC<AppProps> = () => {
       return { error: `Unknown tool: ${name}` };
     }
 
-    // Show tool execution
+    // Show tool execution start
     setMessages(prev => [...prev, {
       role: 'assistant',
       content: `🛠️ Executing ${name}...`,
@@ -306,29 +398,61 @@ const App: React.FC<AppProps> = () => {
     try {
       const result = await implementation(args);
       
-      // Special display for 'think' tool
-      if (name === 'think') {
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: `💭 ${args.thoughts.substring(0, 150)}${args.thoughts.length > 150 ? '...' : ''}`,
-          isThinking: true
-        } as DisplayMessage]);
-      } else {
-        // Show completion for other tools
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: `✅ ${name} completed`,
-          isProcessing: false
-        } as DisplayMessage]);
-      }
+      // Small delay to prevent flickering
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Update the last message to show completion instead of adding new ones
+      setMessages(prev => {
+        const newMessages = [...prev];
+        // Remove the "Executing..." message
+        newMessages.pop();
+        
+        // Special display for 'think' tool
+        if (name === 'think') {
+          newMessages.push({
+            role: 'assistant',
+            content: `💭 ${args.thoughts}`,
+            isThinking: true
+          } as DisplayMessage);
+        } else {
+          // Show detailed completion for other tools with formatted result
+          const resultDisplay = formatToolResult(name, args, result);
+          newMessages.push({
+            role: 'assistant',
+            content: resultDisplay,
+            isProcessing: false,
+            isToolResult: true
+          } as DisplayMessage);
+        }
+        
+        return newMessages;
+      });
       
       return result;
     } catch (error: any) {
+      setMessages(prev => {
+        const newMessages = [...prev];
+        // Remove the "Executing..." message
+        newMessages.pop();
+        // Add error message
+        newMessages.push({
+          role: 'assistant',
+          content: `❌ ${name} failed: ${error.message}`,
+          isProcessing: false
+        } as DisplayMessage);
+        return newMessages;
+      });
       return { error: error.message };
     }
   }, []);
 
-  const processAssistantResponse = useCallback(async (response: any): Promise<Message[]> => {
+  const processAssistantResponse = useCallback(async (response: any, depth: number = 0): Promise<Message[]> => {
+    // Prevent infinite recursion
+    if (depth > 3) {
+      console.warn('Maximum recursion depth reached for tool calls');
+      return [];
+    }
+
     const choice = response.choices?.[0];
     if (!choice) {
       throw new Error('No response choice from API');
@@ -389,11 +513,13 @@ const App: React.FC<AppProps> = () => {
         }
       }
 
-      // Get follow-up response from assistant after tool execution
-      const updatedHistory = [...conversationHistory, ...newMessages];
-      const followUpResponse = await callOpenRouterAPI(updatedHistory, tools);
-      const followUpMessages = await processAssistantResponse(followUpResponse);
-      newMessages.push(...followUpMessages);
+      // Get follow-up response from assistant after tool execution (with recursion limit)
+      if (depth < 3) {
+        const updatedHistory = [...conversationHistory, ...newMessages];
+        const followUpResponse = await callOpenRouterAPI(updatedHistory, tools);
+        const followUpMessages = await processAssistantResponse(followUpResponse, depth + 1);
+        newMessages.push(...followUpMessages);
+      }
     }
 
     return newMessages;
@@ -502,11 +628,13 @@ const App: React.FC<AppProps> = () => {
   const formatMessage = (msg: DisplayMessage) => {
     const prefix = msg.role === 'user' ? '👤' : 
                   msg.role === 'assistant' ? '🤖' : 
-                  msg.isThinking ? '💭' : '⚙️';
+                  msg.isThinking ? '💭' : 
+                  msg.isToolResult ? '🔧' : '⚙️';
     
     const color = msg.role === 'user' ? 'blue' :
                  msg.role === 'assistant' ? 'green' :
-                 msg.isThinking ? 'magenta' : 'gray';
+                 msg.isThinking ? 'magenta' : 
+                 msg.isToolResult ? 'cyan' : 'gray';
     
     return `${prefix} ${chalk[color](msg.content || '')}`;
   };
@@ -562,7 +690,11 @@ const App: React.FC<AppProps> = () => {
       
       <Box flexDirection="column" flexGrow={1} marginBottom={1} padding={1}>
         {messages.map((msg, index) => (
-          <Box key={index} marginBottom={0}>
+          <Box key={index} 
+               marginBottom={msg.isToolResult ? 1 : 0} 
+               borderStyle={msg.isToolResult ? "single" : undefined}
+               borderColor={msg.isToolResult ? "cyan" : undefined}
+               padding={msg.isToolResult ? 1 : 0}>
             <Text>{formatMessage(msg)}</Text>
           </Box>
         ))}
