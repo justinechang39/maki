@@ -116,113 +116,104 @@ const App: React.FC<AppProps> = () => {
   const { stdout } = useStdout();
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Get terminal dimensions for proper sizing
+  // Get terminal dimensions for reference only
   const terminalHeight = stdout?.rows || 24;
   const terminalWidth = stdout?.columns || 80;
   
-  // Calculate available space for messages (minus header, input, and padding)
-  const availableMessageHeight = Math.max(5, terminalHeight - 8);
-
-  // Virtualize messages to show only what fits on screen
-  const visibleMessages = useMemo(() => {
-    if (messages.length <= availableMessageHeight) {
-      return messages;
-    }
-    // Show the most recent messages that fit
-    return messages.slice(-availableMessageHeight);
-  }, [messages, availableMessageHeight]);
+  // Don't virtualize messages - let them flow naturally and allow scrolling
+  const visibleMessages = messages;
 
   // Note: Debounced updates removed as they're not needed with current message flow
 
   // Format tool results for better display
   const formatToolResult = useCallback((toolName: string, args: any, result: any): string => {
     if (result.error) {
-      return `❌ ${toolName} failed: ${result.error}`;
+      return `${toolName} failed: ${result.error}`;
     }
 
     if (!result.success && result.message) {
-      return `⚠️ ${toolName}: ${result.message}`;
+      return `${toolName}: ${result.message}`;
     }
 
     // Format based on tool type
     switch (toolName) {
       case 'listFiles':
-        const fileList = result.files?.slice(0, 10).map((f: string) => `  📄 ${f}`).join('\n') || '';
-        const moreFiles = result.files?.length > 10 ? `\n  ... and ${result.files.length - 10} more files` : '';
-        return `✅ Listed ${result.fileCount || 0} files in ${result.directory || args.path || '.'}\n${fileList}${moreFiles}`;
+        const fileList = result.files?.slice(0, 8).map((f: string) => `📄 ${f}`).join('\n') || '';
+        const moreFiles = result.files?.length > 8 ? `\n... and ${result.files.length - 8} more files` : '';
+        return `Listed ${result.fileCount || 0} files in ${result.directory || args.path || '.'}\n${fileList}${moreFiles}`;
       
       case 'listFolders':
-        const folderList = result.folders?.slice(0, 10).map((f: string) => `  📁 ${f}`).join('\n') || '';
-        const moreFolders = result.folders?.length > 10 ? `\n  ... and ${result.folders.length - 10} more folders` : '';
-        return `✅ Listed ${result.folderCount || 0} folders in ${result.directory || args.path || '.'}\n${folderList}${moreFolders}`;
+        const folderList = result.folders?.slice(0, 8).map((f: string) => `📁 ${f}`).join('\n') || '';
+        const moreFolders = result.folders?.length > 8 ? `\n... and ${result.folders.length - 8} more folders` : '';
+        return `Listed ${result.folderCount || 0} folders in ${result.directory || args.path || '.'}\n${folderList}${moreFolders}`;
       
       case 'readFile':
         const content = result.content || '';
-        const preview = content.length > 200 ? content.substring(0, 200) + '...' : content;
         const lines = content.split('\n').length;
-        return `✅ Read file ${result.path || args.path} (${lines} lines, ${content.length} chars)\n${preview ? `Preview:\n${preview}` : ''}`;
+        const sizeDesc = content.length > 1000 ? `${Math.round(content.length/1000)}KB` : `${content.length} chars`;
+        return `Read ${result.path || args.path} (${lines} lines, ${sizeDesc})`;
       
       case 'writeFile':
-        return `✅ File written: ${args.path} (${args.content?.length || 0} characters)`;
+        const sizeDesc2 = args.content?.length > 1000 ? `${Math.round(args.content.length/1000)}KB` : `${args.content?.length || 0} chars`;
+        return `File written: ${args.path} (${sizeDesc2})`;
       
       case 'updateFile':
-        return `✅ File updated: ${args.path} (${args.operation} operation${result.linesModified ? `, ${result.linesModified} lines modified` : ''})`;
+        return `File updated: ${args.path} (${args.operation}${result.linesModified ? `, ${result.linesModified} lines` : ''})`;
       
       case 'deleteFile':
-        return `✅ File deleted: ${args.path}`;
+        return `File deleted: ${args.path}`;
       
       case 'createFolder':
-        return `✅ Folder created: ${args.path}`;
+        return `Folder created: ${args.path}`;
       
       case 'deleteFolder':
-        return `✅ Folder deleted: ${args.path}${args.recursive ? ' (recursive)' : ''}`;
+        return `Folder deleted: ${args.path}${args.recursive ? ' (recursive)' : ''}`;
       
       case 'searchFiles':
         const resultCount = result.resultCount || 0;
-        const resultPreview = result.results?.slice(0, 5).map((r: any) => 
-          `  ${r.type === 'filename' ? '📄' : '📝'} ${r.path}${r.line ? `:${r.line}` : ''}${r.preview ? ` - ${r.preview}` : ''}`
+        const resultPreview = result.results?.slice(0, 4).map((r: any) => 
+          `${r.type === 'filename' ? '📄' : '📝'} ${r.path}${r.line ? `:${r.line}` : ''}${r.preview ? ` - ${r.preview.substring(0, 50)}${r.preview.length > 50 ? '...' : ''}` : ''}`
         ).join('\n') || '';
-        return `✅ Found ${resultCount} matches for "${args.query}"\n${resultPreview}${resultCount > 5 ? `\n  ... and ${resultCount - 5} more matches` : ''}`;
+        return `Found ${resultCount} matches for "${args.query}"\n${resultPreview}${resultCount > 4 ? `\n... and ${resultCount - 4} more matches` : ''}`;
       
       case 'getFileInfo':
-        return `✅ File info for ${result.path}:\n  Type: ${result.type}\n  Size: ${result.size} bytes\n  Modified: ${new Date(result.modified).toLocaleString()}`;
+        return `File info: ${result.path}\nType: ${result.type} | Size: ${result.size} bytes | Modified: ${new Date(result.modified).toLocaleDateString()}`;
       
       case 'copyFile':
       case 'renameFile':
-        return `✅ ${result.message}`;
+        return `${result.message}`;
       
       case 'todo_read':
         const todos = result.todos || [];
-        const todoPreview = todos.slice(0, 5).map((t: any) => 
-          `  ${t.status === 'completed' ? '✅' : t.status === 'in-progress' ? '🔄' : '⭕'} ${t.content}`
-        ).join('\n') || '  No todos found';
-        return `✅ Current todos (${todos.length}):\n${todoPreview}${todos.length > 5 ? `\n  ... and ${todos.length - 5} more todos` : ''}`;
+        const todoPreview = todos.slice(0, 4).map((t: any) => 
+          `${t.status === 'completed' ? '✅' : t.status === 'in-progress' ? '🔄' : '⭕'} ${t.content}`
+        ).join('\n') || 'No todos found';
+        return `Current todos (${todos.length}):\n${todoPreview}${todos.length > 4 ? `\n... and ${todos.length - 4} more` : ''}`;
       
       case 'todo_write':
-        return `✅ Updated todo list (${args.todos?.length || 0} items)`;
+        return `Updated todo list (${args.todos?.length || 0} items)`;
       
       case 'parseCSV':
         const rowCount = result.data?.length || 0;
         const colCount = result.headers?.length || 0;
-        return `✅ Parsed CSV: ${rowCount} rows, ${colCount} columns\n  Headers: ${result.headers?.slice(0, 5).join(', ')}${colCount > 5 ? '...' : ''}`;
+        return `Parsed CSV: ${rowCount} rows, ${colCount} columns\nHeaders: ${result.headers?.slice(0, 4).join(', ')}${colCount > 4 ? '...' : ''}`;
       
       case 'writeCSV':
-        return `✅ CSV written to ${args.path} (${result.rowCount || 0} rows)`;
+        return `CSV written to ${args.path} (${result.rowCount || 0} rows)`;
       
       case 'fetchWebContent':
         const contentLength = result.content?.length || 0;
-        const title = result.title ? `\n  Title: ${result.title}` : '';
-        return `✅ Fetched ${args.url} (${contentLength} chars)${title}`;
+        const sizeDesc3 = contentLength > 1000 ? `${Math.round(contentLength/1000)}KB` : `${contentLength} chars`;
+        const title = result.title ? `\nTitle: ${result.title}` : '';
+        return `Fetched ${args.url} (${sizeDesc3})${title}`;
       
       default:
         // Generic success message with result preview
         if (result.success || result.message) {
-          const message = result.message || 'Operation completed successfully';
-          const hasData = Object.keys(result).some(key => !['success', 'message'].includes(key));
-          const dataPreview = hasData ? `\n  Result: ${JSON.stringify(result, null, 2).substring(0, 200)}${JSON.stringify(result).length > 200 ? '...' : ''}` : '';
-          return `✅ ${message}${dataPreview}`;
+          const message = result.message || 'Operation completed';
+          return message;
         }
-        return `✅ ${toolName} completed`;
+        return `${toolName} completed`;
     }
   }, []);
 
@@ -701,20 +692,17 @@ const App: React.FC<AppProps> = () => {
   }
 
   return (
-    <Box flexDirection="column" height={terminalHeight} width={terminalWidth}>
+    <Box flexDirection="column">
       <Box borderStyle="round" borderColor="gray" padding={1} marginBottom={1}>
         <Text bold>OpenRouter Agent CLI (Ink Interface)</Text>
       </Box>
       
-      <Box flexDirection="column" height={availableMessageHeight} marginBottom={1} padding={1} overflowY="hidden">
+      <Box flexDirection="column" marginBottom={1} padding={1}>
         {visibleMessages.map((msg, index) => {
-          const actualIndex = messages.length > availableMessageHeight 
-            ? messages.length - availableMessageHeight + index 
-            : index;
           // Create stable key using index and content hash
           const contentHash = msg.content ? msg.content.length + msg.content.slice(-10) : 'empty';
           return (
-            <Box key={`msg-${actualIndex}-${msg.role}-${contentHash}`} 
+            <Box key={`msg-${index}-${msg.role}-${contentHash}`} 
                  marginBottom={msg.isToolResult ? 1 : 0} 
                  padding={msg.isToolResult ? 1 : 0}>
               {msg.isToolResult ? (
@@ -729,12 +717,6 @@ const App: React.FC<AppProps> = () => {
         {isProcessing && (
           <Box>
             <Spinner label=" Processing..." />
-          </Box>
-        )}
-        
-        {messages.length > availableMessageHeight && (
-          <Box paddingTop={1}>
-            <Text dimColor>... {messages.length - availableMessageHeight} earlier messages (scroll up in terminal)</Text>
           </Box>
         )}
       </Box>
