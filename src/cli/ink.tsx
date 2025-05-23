@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { render, Box, Text, useInput, useApp } from 'ink';
-import { Spinner } from '@inkjs/ui';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { render, Box, Text, useInput, useApp, useStdout } from 'ink';
+import { Spinner, TextInput, StatusMessage, ThemeProvider, defaultTheme } from '@inkjs/ui';
 import chalk from 'chalk';
 import { MAX_CONVERSATION_LENGTH } from '../core/config.js';
 import { validateConversationHistory } from '../core/utils.js';
@@ -101,6 +101,8 @@ const App: React.FC<AppProps> = () => {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [inputMode, setInputMode] = useState<'chat' | 'navigate'>('chat');
+  const [inputKey, setInputKey] = useState(0);
   const [conversationHistory, setConversationHistory] = useState<Message[]>([]);
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
   const [isSelectingThread, setIsSelectingThread] = useState(true);
@@ -113,9 +115,39 @@ const App: React.FC<AppProps> = () => {
   const [isDeletingThread, setIsDeletingThread] = useState(false);
   const isCreatingThread = useRef(false);
   const { exit } = useApp();
+  const { stdout } = useStdout();
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Format tool results for better display (no useCallback to avoid circular dependency)
-  const formatToolResult = (toolName: string, args: any, result: any): string => {
+  // Get terminal dimensions for proper sizing
+  const terminalHeight = stdout?.rows || 24;
+  const terminalWidth = stdout?.columns || 80;
+  
+  // Calculate available space for messages (minus header, input, and padding)
+  const availableMessageHeight = Math.max(5, terminalHeight - 8);
+
+  // Virtualize messages to show only what fits on screen
+  const visibleMessages = useMemo(() => {
+    if (messages.length <= availableMessageHeight) {
+      return messages;
+    }
+    // Show the most recent messages that fit
+    return messages.slice(-availableMessageHeight);
+  }, [messages, availableMessageHeight]);
+
+  // Debounced message update to prevent rapid flickering
+  const debouncedSetMessages = useCallback((updateFn: (prev: DisplayMessage[]) => DisplayMessage[]) => {
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+    }
+    
+    updateTimeoutRef.current = setTimeout(() => {
+      setMessages(updateFn);
+      updateTimeoutRef.current = null;
+    }, 50); // 50ms debounce
+  }, []);
+
+  // Format tool results for better display
+  const formatToolResult = useCallback((toolName: string, args: any, result: any): string => {
     if (result.error) {
       return `❌ ${toolName} failed: ${result.error}`;
     }
@@ -204,7 +236,7 @@ const App: React.FC<AppProps> = () => {
         }
         return `✅ ${toolName} completed`;
     }
-  };
+  }, []);
 
   // Load threads on mount
   useEffect(() => {
@@ -227,6 +259,15 @@ const App: React.FC<AppProps> = () => {
     };
     
     loadThreads();
+  }, []);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
+    };
   }, []);
 
   // Handle thread selection
@@ -388,24 +429,12 @@ const App: React.FC<AppProps> = () => {
       return { error: `Unknown tool: ${name}` };
     }
 
-    // Show tool execution start
-    setMessages(prev => [...prev, {
-      role: 'assistant',
-      content: `🛠️ Executing ${name}...`,
-      isProcessing: true
-    } as DisplayMessage]);
-
     try {
       const result = await implementation(args);
       
-      // Small delay to prevent flickering
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Update the last message to show completion instead of adding new ones
+      // Single update with result - no intermediate "executing" message to prevent flicker
       setMessages(prev => {
         const newMessages = [...prev];
-        // Remove the "Executing..." message
-        newMessages.pop();
         
         // Special display for 'think' tool
         if (name === 'think') {
@@ -430,21 +459,14 @@ const App: React.FC<AppProps> = () => {
       
       return result;
     } catch (error: any) {
-      setMessages(prev => {
-        const newMessages = [...prev];
-        // Remove the "Executing..." message
-        newMessages.pop();
-        // Add error message
-        newMessages.push({
-          role: 'assistant',
-          content: `❌ ${name} failed: ${error.message}`,
-          isProcessing: false
-        } as DisplayMessage);
-        return newMessages;
-      });
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `❌ ${name} failed: ${error.message}`,
+        isProcessing: false
+      } as DisplayMessage]);
       return { error: error.message };
     }
-  }, []);
+  }, [formatToolResult]);
 
   const processAssistantResponse = useCallback(async (response: any, depth: number = 0): Promise<Message[]> => {
     // Prevent infinite recursion
@@ -525,12 +547,12 @@ const App: React.FC<AppProps> = () => {
     return newMessages;
   }, [conversationHistory, executeToolCall, currentThreadId]);
 
-  const handleSubmit = useCallback(async () => {
-    if (!inputText.trim() || isProcessing) return;
+  const handleSubmit = useCallback(async (userInput: string) => {
+    if (!userInput.trim() || isProcessing) return;
 
-    const userInput = inputText.trim();
+    const trimmedInput = userInput.trim();
     
-    if (userInput.toLowerCase() === 'exit' || userInput.toLowerCase() === 'quit') {
+    if (trimmedInput.toLowerCase() === 'exit' || trimmedInput.toLowerCase() === 'quit') {
       exit();
       return;
     }
@@ -538,22 +560,21 @@ const App: React.FC<AppProps> = () => {
     // Add user message to display and conversation
     const userMessage: Message = {
       role: 'user',
-      content: userInput
+      content: trimmedInput
     };
 
     setMessages(prev => [...prev, userMessage as DisplayMessage]);
-    setInputText('');
     setIsProcessing(true);
 
     // Save user message to database
     if (currentThreadId) {
-      await ThreadDatabase.addMessage(currentThreadId, 'USER', userInput);
+      await ThreadDatabase.addMessage(currentThreadId, 'USER', trimmedInput);
       
       // Check if this is the first user message (only system message exists)
       const isFirstMessage = conversationHistory.length === 1 && conversationHistory[0].role === 'system';
       if (isFirstMessage) {
         // Generate thread title in the background
-        generateThreadTitle(userInput, currentThreadId);
+        generateThreadTitle(trimmedInput, currentThreadId);
       }
     }
 
@@ -584,7 +605,7 @@ const App: React.FC<AppProps> = () => {
     } finally {
       setIsProcessing(false);
     }
-  }, [inputText, isProcessing, conversationHistory, processAssistantResponse, exit]);
+  }, [isProcessing, conversationHistory, processAssistantResponse, exit, currentThreadId, generateThreadTitle]);
 
   useInput((input, key) => {
     if (isSelectingThread) {
@@ -613,31 +634,40 @@ const App: React.FC<AppProps> = () => {
         exit();
       }
     } else {
-      if (key.return) {
-        handleSubmit();
-      } else if (key.ctrl && input === 'c') {
+      // Chat mode - TextInput component handles the input now
+      if (key.ctrl && input === 'c') {
         exit();
-      } else if (key.backspace || key.delete) {
-        setInputText(prev => prev.slice(0, -1));
-      } else if (input && !key.ctrl && !key.meta) {
-        setInputText(prev => prev + input);
       }
     }
   });
 
-  const formatMessage = (msg: DisplayMessage) => {
+  const formatMessage = useCallback((msg: DisplayMessage) => {
+    if (msg.isToolResult) {
+      // Use StatusMessage for tool results
+      const isSuccess = msg.content?.includes('✅');
+      const isError = msg.content?.includes('❌');
+      const isWarning = msg.content?.includes('⚠️');
+      
+      const variant = isError ? 'error' : isWarning ? 'warning' : isSuccess ? 'success' : 'info';
+      
+      return (
+        <StatusMessage variant={variant}>
+          {msg.content?.replace(/^[✅❌⚠️]\s*/, '') || ''}
+        </StatusMessage>
+      );
+    }
+    
+    // For regular messages, use the existing format
     const prefix = msg.role === 'user' ? '👤' : 
                   msg.role === 'assistant' ? '🤖' : 
-                  msg.isThinking ? '💭' : 
-                  msg.isToolResult ? '🔧' : '⚙️';
+                  msg.isThinking ? '💭' : '⚙️';
     
     const color = msg.role === 'user' ? 'blue' :
                  msg.role === 'assistant' ? 'green' :
-                 msg.isThinking ? 'magenta' : 
-                 msg.isToolResult ? 'cyan' : 'gray';
+                 msg.isThinking ? 'magenta' : 'gray';
     
     return `${prefix} ${chalk[color](msg.content || '')}`;
-  };
+  }, []);
 
   if (isLoadingThreads) {
     return (
@@ -683,34 +713,56 @@ const App: React.FC<AppProps> = () => {
   }
 
   return (
-    <Box flexDirection="column" height="100%">
+    <Box flexDirection="column" height={terminalHeight} width={terminalWidth}>
       <Box borderStyle="round" borderColor="gray" padding={1} marginBottom={1}>
         <Text bold>OpenRouter Agent CLI (Ink Interface)</Text>
       </Box>
       
-      <Box flexDirection="column" flexGrow={1} marginBottom={1} padding={1}>
-        {messages.map((msg, index) => (
-          <Box key={index} 
-               marginBottom={msg.isToolResult ? 1 : 0} 
-               borderStyle={msg.isToolResult ? "single" : undefined}
-               borderColor={msg.isToolResult ? "cyan" : undefined}
-               padding={msg.isToolResult ? 1 : 0}>
-            <Text>{formatMessage(msg)}</Text>
-          </Box>
-        ))}
+      <Box flexDirection="column" height={availableMessageHeight} marginBottom={1} padding={1} overflowY="hidden">
+        {visibleMessages.map((msg, index) => {
+          const actualIndex = messages.length > availableMessageHeight 
+            ? messages.length - availableMessageHeight + index 
+            : index;
+          return (
+            <Box key={`msg-${actualIndex}-${msg.content?.substring(0, 20) || ''}`} 
+                 marginBottom={msg.isToolResult ? 1 : 0} 
+                 padding={msg.isToolResult ? 1 : 0}>
+              {msg.isToolResult ? (
+                formatMessage(msg)
+              ) : (
+                <Text wrap="wrap">{formatMessage(msg)}</Text>
+              )}
+            </Box>
+          );
+        })}
         
         {isProcessing && (
           <Box>
             <Spinner label=" Processing..." />
           </Box>
         )}
+        
+        {messages.length > availableMessageHeight && (
+          <Box paddingTop={1}>
+            <Text dimColor>... {messages.length - availableMessageHeight} earlier messages (scroll up in terminal)</Text>
+          </Box>
+        )}
       </Box>
       
       <Box borderStyle="single" borderColor="blue" padding={1}>
-        <Text>
-          💬 {inputText}
-          <Text dimColor>│ Enter to send, Ctrl+C to exit</Text>
-        </Text>
+        <Box flexDirection="column" gap={1}>
+          <Text dimColor>💬 Type your message (Enter to send, Ctrl+C to exit)</Text>
+          <TextInput
+            key={inputKey}
+            placeholder="Ask me anything..."
+            isDisabled={isProcessing}
+            onSubmit={(value) => {
+              handleSubmit(value);
+              setInputKey(prev => prev + 1); // Force re-render to clear input
+            }}
+            onChange={setInputText}
+          />
+        </Box>
       </Box>
     </Box>
   );
@@ -735,7 +787,11 @@ export function startInkInterface(): void {
   console.log('🚀 Starting Ink interface...');
   
   try {
-    render(<App />);
+    render(
+      <ThemeProvider theme={defaultTheme}>
+        <App />
+      </ThemeProvider>
+    );
   } catch (error) {
     console.error('❌ Error starting interface:', error);
     process.exit(1);
