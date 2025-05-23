@@ -20,7 +20,8 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'sk-or-v1-223187b8b
 const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 const MODEL_ID = 'openai/gpt-4.1-mini'; // Updated to a more current model
-
+// openai/gpt-4.1-mini
+// anthropic/claude-sonnet-4
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -142,17 +143,19 @@ const tools: Tool[] = [
     type: 'function',
     function: {
       name: 'updateFile',
-      description: `Update an existing file in the workspace ('${WORKSPACE_DIRECTORY_NAME}') by appending or prepending content.`,
+      description: `Update specific lines in an existing file in the workspace ('${WORKSPACE_DIRECTORY_NAME}') with granular line-based operations.`,
       parameters: {
         type: 'object',
         properties: {
           path: { type: 'string', description: `The file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
-          content: { type: 'string', description: 'The content to add.' },
+          content: { type: 'string', description: 'The new content to insert or replace with.' },
           operation: {
             type: 'string',
-            description: 'Operation: "append" or "prepend".',
-            enum: ['append', 'prepend']
-          }
+            description: 'Operation type: "replace" (replace specific lines), "insert" (insert before line), "append" (add to end), or "prepend" (add to beginning).',
+            enum: ['replace', 'insert', 'append', 'prepend']
+          },
+          startLine: { type: 'number', description: 'Starting line number (1-based) for replace/insert operations. Required for replace and insert operations.' },
+          endLine: { type: 'number', description: 'Ending line number (1-based, inclusive) for replace operations. If not specified for replace, only startLine is replaced.' }
         },
         required: ['path', 'content', 'operation']
       }
@@ -466,23 +469,84 @@ const toolImplementations: Record<string, (args: any) => Promise<any>> = {
       return { error: error.message };
     }
   },
-  updateFile: async (args: { path: string; content: string; operation: 'append' | 'prepend' }) => {
+  updateFile: async (args: { path: string; content: string; operation: 'replace' | 'insert' | 'append' | 'prepend'; startLine?: number; endLine?: number }) => {
     try {
       const safePath = getSafeWorkspacePath(args.path);
       let existingContent = '';
+      
       try {
         existingContent = await fs.readFile(safePath, 'utf-8');
       } catch (readError: any) {
         if (readError.code !== 'ENOENT') throw readError;
+        // File doesn't exist, create it for append/prepend operations
+        if (args.operation === 'append' || args.operation === 'prepend') {
+          existingContent = '';
+        } else {
+          return { error: `File '${args.path}' does not exist. Cannot perform ${args.operation} operation.` };
+        }
       }
 
-      const newContent = args.operation === 'append'
-        ? existingContent + args.content
-        : args.content + existingContent;
+      const lines = existingContent.split('\n');
+      let newContent = '';
+
+      switch (args.operation) {
+        case 'replace':
+          if (args.startLine === undefined) {
+            return { error: 'startLine is required for replace operation.' };
+          }
+          if (args.startLine < 1 || args.startLine > lines.length) {
+            return { error: `Invalid startLine ${args.startLine}. File has ${lines.length} lines.` };
+          }
+          
+          const endLine = args.endLine || args.startLine;
+          if (endLine < args.startLine || endLine > lines.length) {
+            return { error: `Invalid endLine ${endLine}. Must be >= startLine and <= ${lines.length}.` };
+          }
+          
+          const newLines = args.content.split('\n');
+          lines.splice(args.startLine - 1, endLine - args.startLine + 1, ...newLines);
+          newContent = lines.join('\n');
+          break;
+
+        case 'insert':
+          if (args.startLine === undefined) {
+            return { error: 'startLine is required for insert operation.' };
+          }
+          if (args.startLine < 1 || args.startLine > lines.length + 1) {
+            return { error: `Invalid startLine ${args.startLine}. Valid range is 1 to ${lines.length + 1}.` };
+          }
+          
+          const insertLines = args.content.split('\n');
+          lines.splice(args.startLine - 1, 0, ...insertLines);
+          newContent = lines.join('\n');
+          break;
+
+        case 'append':
+          newContent = existingContent + (existingContent && !existingContent.endsWith('\n') ? '\n' : '') + args.content;
+          break;
+
+        case 'prepend':
+          newContent = args.content + (args.content && !args.content.endsWith('\n') ? '\n' : '') + existingContent;
+          break;
+
+        default:
+          return { error: `Unsupported operation: ${args.operation}` };
+      }
 
       await fs.mkdir(path.dirname(safePath), { recursive: true });
       await fs.writeFile(safePath, newContent, 'utf-8');
-      return { success: true, message: `File '${args.path}' updated successfully.` };
+      
+      const operationDesc = args.operation === 'replace' 
+        ? `replaced lines ${args.startLine}-${args.endLine || args.startLine}`
+        : args.operation === 'insert'
+        ? `inserted content at line ${args.startLine}`
+        : `${args.operation}ed content`;
+        
+      return { 
+        success: true, 
+        message: `File '${args.path}' updated successfully (${operationDesc}).`,
+        linesModified: args.operation === 'replace' ? (args.endLine || args.startLine!) - args.startLine! + 1 : undefined
+      };
     } catch (error: any) {
       return { error: error.message };
     }
@@ -726,9 +790,19 @@ async function agentLoop(messages: Message[]): Promise<Message[]> {
           
           let args;
           try {
-            args = JSON.parse(toolCall.function.arguments);
+            // Debug: log the raw arguments
+            console.log(toolPrefix + chalk.gray(` Raw arguments: "${toolCall.function.arguments}"`));
+            
+            // Handle empty arguments for tools that don't require parameters
+            const argumentsStr = toolCall.function.arguments.trim();
+            if (!argumentsStr || argumentsStr === '') {
+              args = {};
+            } else {
+              args = JSON.parse(argumentsStr);
+            }
           } catch (e: any) {
             console.error(errorPrefix + chalk.red(` Failed to parse arguments for ${toolName}: ${e.message}`));
+            console.error(errorPrefix + chalk.red(` Raw arguments were: "${toolCall.function.arguments}"`));
             toolResponses.push({
               role: 'tool',
               tool_call_id: toolCall.id,
@@ -818,14 +892,22 @@ Key Instructions:
 3.  **One main operation at a time:** If a user requests multiple distinct operations (e.g., "create file A and fetch website B"), address them sequentially. You can use multiple tool calls in one response if they are part of a single logical step.
 4.  **Clarify ambiguity:** If a request is unclear, ask for clarification.
 5.  **Planning with 'think':** For complex requests or multi-step tasks, use the 'think' tool first to outline your plan. This helps in structuring your approach.
-6.  **Todo Management:**
+6.  **File Operations:**
+    *   Use 'writeFile' to create new files or completely replace existing files.
+    *   Use 'updateFile' for granular modifications:
+        - 'replace' operation: Replace specific lines (requires startLine, optionally endLine)
+        - 'insert' operation: Insert content before a specific line (requires startLine)
+        - 'append' operation: Add content to the end of the file
+        - 'prepend' operation: Add content to the beginning of the file
+    *   Always use 'readFile' first to understand file content before making updates.
+7.  **Todo Management:**
     *   Use 'readTodo', 'writeTodo', and 'updateTodoItem' for managing 'todo.md'.
     *   Todo format: \`- [ ] Task description\`, \`- [/] In progress\`, \`- [x] Completed\`, \`- [~] Cancelled\`.
-7.  **Be concise but clear:** Summarize actions taken and results. If an error occurs with a tool, report it.
-8.  **Continuity:** If a task requires multiple steps/turns, continue until it's complete or the user directs otherwise. You don't need to ask for permission to continue an already assigned multi-step task unless you encounter an issue or ambiguity.
-9.  **List files/folders:** Use 'listFiles' tool to inspect directory contents. Default is to list both files and folders in the workspace root.
-10. **Error Handling:** If a tool call returns an error, inform the user about the error and suggest potential reasons or next steps. Do not attempt the same failed operation repeatedly without modification or clarification.
-11. **Fetch Website Content:** Use the 'fetchWebsiteContent' tool to retrieve raw content (e.g., HTML, text) from public websites. Provide a full URL (e.g., "https://example.com"). The content might be truncated if it's very long. You will receive the raw data (like HTML source code); you may need to describe how to extract specific information from it or summarize it based on the user's request. This tool CANNOT access local network resources or private IP addresses. Only public HTTP/HTTPS URLs are allowed.
+8.  **Be concise but clear:** Summarize actions taken and results. If an error occurs with a tool, report it.
+9.  **Continuity:** If a task requires multiple steps/turns, continue until it's complete or the user directs otherwise. You don't need to ask for permission to continue an already assigned multi-step task unless you encounter an issue or ambiguity.
+10. **List files/folders:** Use 'listFiles' tool to inspect directory contents. Default is to list both files and folders in the workspace root.
+11. **Error Handling:** If a tool call returns an error, inform the user about the error and suggest potential reasons or next steps. Do not attempt the same failed operation repeatedly without modification or clarification.
+12. **Fetch Website Content:** Use the 'fetchWebsiteContent' tool to retrieve raw content (e.g., HTML, text) from public websites. Provide a full URL (e.g., "https://example.com"). The content might be truncated if it's very long. You will receive the raw data (like HTML source code); you may need to describe how to extract specific information from it or summarize it based on the user's request. This tool CANNOT access local network resources or private IP addresses. Only public HTTP/HTTPS URLs are allowed.
 `
     }
   ];
