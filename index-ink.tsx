@@ -9,6 +9,7 @@ import { URL } from 'url';
 // For colored output
 import chalk from 'chalk';
 import * as csv from 'fast-csv';
+import { Spinner } from '@inkjs/ui';
 
 // --- Configuration ---
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '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';
@@ -31,6 +32,12 @@ interface Message {
   name?: string;
   tool_call_id?: string;
   tool_calls?: ToolCall[];
+}
+
+interface DisplayMessage extends Message {
+  showToolCalls?: boolean;
+  isThinking?: boolean;
+  isProcessing?: boolean;
 }
 
 interface ToolCall {
@@ -1340,9 +1347,11 @@ interface ToolExecutionProps {
 }
 
 const ToolExecution: React.FC<ToolExecutionProps> = ({ toolName, toolId }) => (
-  <Box marginBottom={1}>
-    <Text color="yellow">⚡ </Text>
-    <Text color="cyan" bold>{toolName}</Text>
+  <Box marginBottom={1} flexDirection="row" alignItems="center">
+    <Box marginRight={1}>
+      <Spinner type="simpleDotsScrolling" />
+    </Box>
+    <Text color="blue">{toolName}</Text>
     <Text color="gray"> executing...</Text>
   </Box>
 );
@@ -1358,7 +1367,12 @@ const StatusBar: React.FC<StatusBarProps> = ({ isProcessing, toolExecutions }) =
   return (
     <Box borderStyle="single" borderColor="yellow" paddingX={2} paddingY={0} marginBottom={1}>
       {isProcessing && (
-        <Text color="yellow">⏳ Processing your request...</Text>
+        <Box flexDirection="row" alignItems="center">
+          <Box marginRight={1}>
+            <Spinner type="dots" />
+          </Box>
+          <Text color="cyan">Processing your request...</Text>
+        </Box>
       )}
       {toolExecutions.map((tool, index) => (
         <ToolExecution key={`tool-${index}`} toolName={tool.toolName} toolId={tool.toolId} />
@@ -1458,17 +1472,91 @@ const Header: React.FC<HeaderProps> = ({ workspaceDir }) => (
   </Box>
 );
 
+// Enhanced UI Components
+const ToolCallDisplay: React.FC<{ toolCall: ToolCall; result?: any }> = ({ toolCall, result }) => {
+  const args = JSON.parse(toolCall.function.arguments || '{}');
+  
+  return (
+    <Box marginLeft={2} paddingLeft={1} borderLeft borderColor="blue" marginBottom={2}>
+      <Text color="blue">🔧 {toolCall.function.name}</Text>
+      <Text color="gray" dimColor>
+        {Object.keys(args).length > 0 && ` with ${Object.keys(args).slice(0, 2).join(', ')}${Object.keys(args).length > 2 ? '...' : ''}`}
+      </Text>
+      {result && (
+        <Text color={result.success ? "green" : "red"} dimColor>
+          {result.success ? '✓ Success' : '✗ Error'}
+        </Text>
+      )}
+    </Box>
+  );
+};
+
+const ThinkingDisplay: React.FC<{ thoughts: string }> = ({ thoughts }) => (
+  <Box marginLeft={2} paddingLeft={1} borderLeft borderColor="yellow" marginBottom={2}>
+    <Text color="yellow">💭 Thinking...</Text>
+    <Text color="gray" dimColor wrap="wrap">
+      {thoughts}
+    </Text>
+  </Box>
+);
+
 interface ConversationProps {
   messages: Message[];
 }
 
 const Conversation: React.FC<ConversationProps> = ({ messages }) => {
-  // Only show user and assistant messages with content
-  const displayMessages = messages.filter(msg => 
-    (msg.role === 'user' || msg.role === 'assistant') && msg.content
-  ).slice(-8); // Show last 8 messages to prevent clutter
+  // Show user and assistant messages, plus tool calls
+  const displayItems: Array<{ type: 'message' | 'tool' | 'thinking'; data: any; key: string }> = [];
+  
+  messages.forEach((msg, msgIndex) => {
+    if ((msg.role === 'user' || msg.role === 'assistant') && msg.content) {
+      displayItems.push({
+        type: 'message',
+        data: msg,
+        key: `msg-${msgIndex}`
+      });
+    }
+    
+    // Show tool calls for assistant messages
+    if (msg.role === 'assistant' && msg.tool_calls) {
+      msg.tool_calls.forEach((toolCall, toolIndex) => {
+        // Find the corresponding tool result
+        const toolResult = messages.find(m => 
+          m.role === 'tool' && m.tool_call_id === toolCall.id
+        );
+        
+        let parsedResult;
+        if (toolResult?.content) {
+          try {
+            parsedResult = JSON.parse(toolResult.content);
+          } catch {
+            parsedResult = { success: false, error: 'Parse error' };
+          }
+        }
 
-  if (displayMessages.length === 0) {
+        // Special handling for 'think' tool - show as thinking
+        if (toolCall.function.name === 'think') {
+          const args = JSON.parse(toolCall.function.arguments || '{}');
+          displayItems.push({
+            type: 'thinking',
+            data: { thoughts: args.thoughts },
+            key: `think-${msgIndex}-${toolIndex}`
+          });
+        } else {
+          displayItems.push({
+            type: 'tool',
+            data: { toolCall, result: parsedResult },
+            key: `tool-${msgIndex}-${toolIndex}`
+          });
+        }
+      });
+    }
+  });
+
+  // Show last 12 items to prevent clutter
+  const recentItems = displayItems.slice(-12);
+
+  if (recentItems.length === 0) {
     return (
       <Box marginBottom={2}>
         <Text color="gray" italic>Start by typing your request below...</Text>
@@ -1478,14 +1566,36 @@ const Conversation: React.FC<ConversationProps> = ({ messages }) => {
 
   return (
     <Box flexDirection="column" marginBottom={2}>
-      {displayMessages.map((message, index) => (
-        <ChatMessage
-          key={`msg-${index}`}
-          role={message.role}
-          content={message.content || ''}
-          isLatest={index === displayMessages.length - 1}
-        />
-      ))}
+      {recentItems.map((item, index) => {
+        switch (item.type) {
+          case 'message':
+            return (
+              <ChatMessage
+                key={item.key}
+                role={item.data.role}
+                content={item.data.content || ''}
+                isLatest={index === recentItems.length - 1}
+              />
+            );
+          case 'tool':
+            return (
+              <ToolCallDisplay
+                key={item.key}
+                toolCall={item.data.toolCall}
+                result={item.data.result}
+              />
+            );
+          case 'thinking':
+            return (
+              <ThinkingDisplay
+                key={item.key}
+                thoughts={item.data.thoughts}
+              />
+            );
+          default:
+            return null;
+        }
+      })}
     </Box>
   );
 };
@@ -1517,16 +1627,22 @@ const InputArea: React.FC<InputAreaProps> = ({ onSubmit, disabled = false }) => 
 
   return (
     <Box borderStyle="single" borderColor={disabled ? "gray" : "blue"} paddingX={2} paddingY={1}>
-      <Box>
+      <Box flexDirection="row" alignItems="center">
         <Text color={disabled ? "gray" : "blue"}>❯ </Text>
-        <Text color={disabled ? "gray" : "white"}>{input}</Text>
-        <Text color="blue">{disabled ? "" : "█"}</Text>
+        {disabled ? (
+          <>
+            <Box marginRight={1}>
+              <Spinner type="dots" />
+            </Box>
+            <Text color="yellow">Processing... Please wait</Text>
+          </>
+        ) : (
+          <>
+            <Text color="white">{input}</Text>
+            <Text color="blue">█</Text>
+          </>
+        )}
       </Box>
-      {disabled && (
-        <Box marginTop={1}>
-          <Text color="yellow">Processing... Please wait</Text>
-        </Box>
-      )}
     </Box>
   );
 };
