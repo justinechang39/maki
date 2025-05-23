@@ -8,20 +8,134 @@ import { validateConversationHistory } from '../core/utils.js';
 import { callOpenRouterAPI } from '../core/api.js';
 import { tools, toolImplementations } from '../tools/index.js';
 import type { Message, DisplayMessage, ToolCall } from '../core/types.js';
+import { ThreadDatabase } from '../core/database.js';
 
 interface AppProps {}
+
+interface ThreadListItem {
+  id: string;
+  title?: string;
+  createdAt: Date;
+  messageCount: number;
+}
+
+const ThreadSelector: React.FC<{
+  threads: ThreadListItem[];
+  selectedIndex: number;
+  onSelect: (threadId: string | 'new') => void;
+}> = ({ threads, selectedIndex, onSelect }) => {
+  const items = [
+    { name: '🆕 Start a new thread', value: 'new' },
+    ...threads.map(thread => ({
+      name: `📝 ${thread.title || 'Untitled'} (${thread.messageCount} messages) - ${thread.createdAt.toLocaleDateString()}`,
+      value: thread.id
+    }))
+  ];
+
+  useInput((input, key) => {
+    if (key.return) {
+      onSelect(items[selectedIndex].value);
+    }
+  });
+
+  return (
+    <Box flexDirection="column" padding={1}>
+      <Text bold>Select a thread:</Text>
+      {items.map((item, index) => (
+        <Box key={index}>
+          <Text color={index === selectedIndex ? 'blue' : 'white'}>
+            {index === selectedIndex ? '> ' : '  '}{item.name}
+          </Text>
+        </Box>
+      ))}
+      <Text dimColor>Press Enter to select, use ↑↓ to navigate</Text>
+    </Box>
+  );
+};
 
 const App: React.FC<AppProps> = () => {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [conversationHistory, setConversationHistory] = useState<Message[]>([
-    {
-      role: 'system',
-      content: 'You are a helpful file management assistant. You have access to tools for working with files, CSV data, todos, and web content within a designated workspace. Use the available tools to help users with their requests. Be concise and helpful in your responses.'
-    }
-  ]);
+  const [conversationHistory, setConversationHistory] = useState<Message[]>([]);
+  const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
+  const [isSelectingThread, setIsSelectingThread] = useState(true);
+  const [threads, setThreads] = useState<ThreadListItem[]>([]);
+  const [selectedThreadIndex, setSelectedThreadIndex] = useState(0);
+  const [isLoadingThreads, setIsLoadingThreads] = useState(true);
   const { exit } = useApp();
+
+  // Load threads on mount
+  useEffect(() => {
+    const loadThreads = async () => {
+      try {
+        const threadList = await ThreadDatabase.getAllThreads();
+        setThreads(threadList);
+        setIsLoadingThreads(false);
+      } catch (error) {
+        console.error('Failed to load threads:', error);
+        setIsLoadingThreads(false);
+      }
+    };
+    
+    loadThreads();
+  }, []);
+
+  // Handle thread selection
+  const handleThreadSelect = useCallback(async (threadIdOrNew: string | 'new') => {
+    try {
+      let threadId: string;
+      
+      if (threadIdOrNew === 'new') {
+        threadId = await ThreadDatabase.createThread();
+      } else {
+        threadId = threadIdOrNew;
+      }
+      
+      setCurrentThreadId(threadId);
+      
+      // Load thread history if it exists
+      let thread: any = null;
+      if (threadIdOrNew !== 'new') {
+        thread = await ThreadDatabase.getThread(threadId);
+        if (thread && thread.messages.length > 0) {
+          const loadedHistory = thread.messages.map(msg => ({
+            role: msg.role.toLowerCase() as 'user' | 'assistant' | 'system' | 'tool',
+            content: msg.content,
+            ...(msg.toolCalls && { tool_calls: msg.toolCalls }),
+            ...(msg.role === 'TOOL' && msg.toolResponses?.[0] && {
+              tool_call_id: msg.toolResponses[0].tool_call_id,
+              name: msg.toolResponses[0].name
+            })
+          }));
+          
+          setConversationHistory(loadedHistory);
+          
+          // Display loaded messages
+          const displayMessages = thread.messages
+            .filter(msg => msg.role !== 'SYSTEM')
+            .map(msg => ({
+              role: msg.role.toLowerCase() as 'user' | 'assistant',
+              content: msg.content
+            }));
+          setMessages(displayMessages as DisplayMessage[]);
+        }
+      }
+      
+      // Add system message for new threads
+      if (threadIdOrNew === 'new' || !thread?.messages.length) {
+        const systemMessage: Message = {
+          role: 'system',
+          content: 'You are a helpful file management assistant. You have access to tools for working with files, CSV data, todos, and web content within a designated workspace. Use the available tools to help users with their requests. Be concise and helpful in your responses.'
+        };
+        setConversationHistory([systemMessage]);
+      }
+      
+      setIsSelectingThread(false);
+    } catch (error) {
+      console.error('Failed to select thread:', error);
+    }
+  }, []);
 
   const executeToolCall = useCallback(async (toolCall: ToolCall): Promise<any> => {
     const { name, arguments: argsString } = toolCall.function;
@@ -87,6 +201,16 @@ const App: React.FC<AppProps> = () => {
     };
     newMessages.push(assistantMessage);
 
+    // Save assistant message to database
+    if (currentThreadId) {
+      await ThreadDatabase.addMessage(
+        currentThreadId,
+        'ASSISTANT',
+        message.content || '',
+        message.tool_calls
+      );
+    }
+
     // Display assistant's text response if any
     if (message.content && message.content.trim()) {
       setMessages(prev => [...prev, {
@@ -108,6 +232,17 @@ const App: React.FC<AppProps> = () => {
           name: toolCall.function.name
         };
         newMessages.push(toolMessage);
+
+        // Save tool response to database
+        if (currentThreadId) {
+          await ThreadDatabase.addMessage(
+            currentThreadId,
+            'TOOL',
+            JSON.stringify(result),
+            undefined,
+            [{ tool_call_id: toolCall.id, name: toolCall.function.name, result }]
+          );
+        }
       }
 
       // Get follow-up response from assistant after tool execution
@@ -118,7 +253,7 @@ const App: React.FC<AppProps> = () => {
     }
 
     return newMessages;
-  }, [conversationHistory, executeToolCall]);
+  }, [conversationHistory, executeToolCall, currentThreadId]);
 
   const handleSubmit = useCallback(async () => {
     if (!inputText.trim() || isProcessing) return;
@@ -139,6 +274,11 @@ const App: React.FC<AppProps> = () => {
     setMessages(prev => [...prev, userMessage as DisplayMessage]);
     setInputText('');
     setIsProcessing(true);
+
+    // Save user message to database
+    if (currentThreadId) {
+      await ThreadDatabase.addMessage(currentThreadId, 'USER', userInput);
+    }
 
     try {
       const newHistory = [...conversationHistory, userMessage];
@@ -170,14 +310,30 @@ const App: React.FC<AppProps> = () => {
   }, [inputText, isProcessing, conversationHistory, processAssistantResponse, exit]);
 
   useInput((input, key) => {
-    if (key.return) {
-      handleSubmit();
-    } else if (key.ctrl && input === 'c') {
-      exit();
-    } else if (key.backspace || key.delete) {
-      setInputText(prev => prev.slice(0, -1));
-    } else if (input && !key.ctrl && !key.meta) {
-      setInputText(prev => prev + input);
+    if (isSelectingThread) {
+      if (key.upArrow) {
+        setSelectedThreadIndex(prev => Math.max(0, prev - 1));
+      } else if (key.downArrow) {
+        setSelectedThreadIndex(prev => Math.min(threads.length, prev + 1));
+      } else if (key.return) {
+        const items = [
+          { name: '🆕 Start a new thread', value: 'new' },
+          ...threads.map(thread => ({ name: '', value: thread.id }))
+        ];
+        handleThreadSelect(items[selectedThreadIndex].value);
+      } else if (key.ctrl && input === 'c') {
+        exit();
+      }
+    } else {
+      if (key.return) {
+        handleSubmit();
+      } else if (key.ctrl && input === 'c') {
+        exit();
+      } else if (key.backspace || key.delete) {
+        setInputText(prev => prev.slice(0, -1));
+      } else if (input && !key.ctrl && !key.meta) {
+        setInputText(prev => prev + input);
+      }
     }
   });
 
@@ -192,6 +348,30 @@ const App: React.FC<AppProps> = () => {
     
     return `${prefix} ${chalk[color](msg.content || '')}`;
   };
+
+  if (isLoadingThreads) {
+    return (
+      <Box flexDirection="column" height="100%" justifyContent="center" alignItems="center">
+        <Spinner label=" Loading threads..." />
+      </Box>
+    );
+  }
+
+  if (isSelectingThread) {
+    return (
+      <Box flexDirection="column" height="100%">
+        <Box borderStyle="round" borderColor="gray" padding={1} marginBottom={1}>
+          <Text bold>OpenRouter Agent CLI (Ink Interface)</Text>
+        </Box>
+        
+        <ThreadSelector 
+          threads={threads}
+          selectedIndex={selectedThreadIndex}
+          onSelect={handleThreadSelect}
+        />
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" height="100%">

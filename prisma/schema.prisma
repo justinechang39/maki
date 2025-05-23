@@ -1,0 +1,43 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Thread {
+  id          String   @id @default(cuid())
+  title       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  messages    Message[]
+
+  @@map("threads")
+}
+
+model Message {
+  id        String      @id @default(cuid())
+  threadId  String
+  role      MessageRole
+  content   String
+  toolCalls Json?       // Store tool calls as JSON
+  toolResponses Json?   // Store tool responses as JSON
+  createdAt DateTime    @default(now())
+
+  thread    Thread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+}
