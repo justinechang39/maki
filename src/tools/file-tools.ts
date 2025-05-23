@@ -9,25 +9,17 @@ export const fileTools: Tool[] = [
     type: 'function',
     function: {
       name: 'listFiles',
-      description: `EXPLORATION TOOL: Discover and catalog workspace contents. Use this to understand project structure, find specific file types, or navigate directories. Essential for initial exploration before making changes. Shows both files and folders with detailed counts for better workspace understanding.`,
+      description: `FILE DISCOVERY: List only files within a specified directory. Perfect for finding specific file types, exploring file contents, or understanding what files exist in a location. Use listFolders for directory structure.`,
       parameters: {
         type: 'object',
         properties: {
           path: {
             type: 'string',
-            description: `Directory path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Leave empty or use '.' for workspace root. Use subdirectory names for deeper exploration.`
+            description: `Directory path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Leave empty or use '.' for workspace root. Shows only files in this directory.`
           },
           extension: {
             type: 'string',
             description: 'Filter by file extension (e.g., "txt", "js", "md"). Omit the dot. Use this to find specific file types quickly.'
-          },
-          includeFiles: {
-            type: 'boolean',
-            description: 'Include files in results. Set false to see only folder structure.'
-          },
-          includeFolders: {
-            type: 'boolean',
-            description: 'Include folders in results. Set false to see only files.'
           }
         },
         required: []
@@ -210,6 +202,35 @@ export const fileTools: Tool[] = [
   {
     type: 'function',
     function: {
+      name: 'listFolders',
+      description: `FOLDER NAVIGATION: List only directories/folders within a specified path. Perfect for understanding folder structure and navigating between directories. Use this when you specifically need to see the directory structure without files cluttering the view.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: `Directory path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Leave empty or use '.' for workspace root. Shows only subdirectories.`
+          }
+        },
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getCurrentDirectory',
+      description: `LOCATION AWARENESS: Get the current working directory path within the workspace. Essential for understanding your current location and navigating the file system effectively.`,
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'searchFiles',
       description: `DISCOVERY TOOL: Search for files by name pattern or content. Use for finding files when you don't know exact locations or searching within file contents.`,
       parameters: {
@@ -227,34 +248,36 @@ export const fileTools: Tool[] = [
 ];
 
 export const fileToolImplementations: Record<string, (args: any) => Promise<any>> = {
-  listFiles: async (args: { path?: string; extension?: string; includeFiles?: boolean; includeFolders?: boolean }) => {
+  listFiles: async (args: { path?: string; extension?: string }) => {
     try {
       const dirPath = getSafeWorkspacePath(args.path || '.');
-      const includeFiles = args.includeFiles !== false;
-      const includeFolders = args.includeFolders !== false;
-
       const entries = await fs.readdir(dirPath, { withFileTypes: true });
-      let files: string[] = [];
-      if (includeFiles) {
-        files = entries.filter(e => e.isFile()).map(e => e.name);
-        if (args.extension) {
-          const ext = args.extension.startsWith('.') ? args.extension : `.${args.extension}`;
-          files = files.filter(f => f.endsWith(ext));
-        }
+      
+      let files = entries.filter(e => e.isFile()).map(e => e.name);
+      if (args.extension) {
+        const ext = args.extension.startsWith('.') ? args.extension : `.${args.extension}`;
+        files = files.filter(f => f.endsWith(ext));
       }
-      let folders: string[] = [];
-      if (includeFolders) {
-        folders = entries.filter(e => e.isDirectory()).map(e => e.name);
-      }
+      
+      // Get current relative path for navigation context
+      const relativePath = path.relative(getSafeWorkspacePath(), dirPath) || '.';
+      const parentPath = relativePath !== '.' ? path.dirname(relativePath) : null;
+      
       return {
-        directory: path.relative(getSafeWorkspacePath(), dirPath) || '.',
-        files,
-        folders,
+        success: true,
+        directory: relativePath,
+        absolutePath: dirPath,
+        parentDirectory: parentPath,
+        files: files.sort(),
         fileCount: files.length,
-        folderCount: folders.length,
+        navigation: {
+          canGoUp: parentPath !== null,
+          upPath: parentPath || '.',
+          isRoot: relativePath === '.'
+        }
       };
     } catch (error: any) {
-      return { error: error.message };
+      return { error: `Failed to list files: ${error.message}` };
     }
   },
 
@@ -486,6 +509,58 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
       };
     } catch (error: any) {
       return { error: error.message };
+    }
+  },
+
+  listFolders: async (args: { path?: string }) => {
+    try {
+      const dirPath = getSafeWorkspacePath(args.path || '.');
+      const entries = await fs.readdir(dirPath, { withFileTypes: true });
+      const folders = entries.filter(e => e.isDirectory()).map(e => e.name).sort();
+      
+      // Get current relative path for navigation context
+      const relativePath = path.relative(getSafeWorkspacePath(), dirPath) || '.';
+      const parentPath = relativePath !== '.' ? path.dirname(relativePath) : null;
+      
+      return {
+        success: true,
+        directory: relativePath,
+        absolutePath: dirPath,
+        parentDirectory: parentPath,
+        folders,
+        folderCount: folders.length,
+        navigation: {
+          canGoUp: parentPath !== null,
+          upPath: parentPath || '.',
+          isRoot: relativePath === '.'
+        }
+      };
+    } catch (error: any) {
+      return { error: `Failed to list folders: ${error.message}` };
+    }
+  },
+
+  getCurrentDirectory: async () => {
+    try {
+      const workspacePath = getSafeWorkspacePath();
+      const currentProcess = process.cwd();
+      const workspaceRelative = path.relative(workspacePath, currentProcess);
+      
+      // Additional workspace information
+      const isInWorkspace = currentProcess.startsWith(workspacePath) || currentProcess === workspacePath;
+      const workspaceName = path.basename(workspacePath);
+      
+      return {
+        success: true,
+        workspaceName: workspaceName,
+        workspacePath: WORKSPACE_DIRECTORY_NAME,
+        absolutePath: workspacePath,
+        currentPath: workspaceRelative || '.',
+        isInWorkspace: isInWorkspace,
+        currentDirectory: path.basename(currentProcess)
+      };
+    } catch (error: any) {
+      return { error: `Failed to get current directory: ${error.message}` };
     }
   },
 
