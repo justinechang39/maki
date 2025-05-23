@@ -160,6 +160,69 @@ export const fileTools: Tool[] = [
         required: ['oldPath', 'newPath']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'copyFile',
+      description: `DUPLICATION TOOL: Create copies of files while preserving the original. Useful for backups, templates, or creating variations of existing files.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          sourcePath: { type: 'string', description: `Source file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing file.` },
+          destinationPath: { type: 'string', description: `Destination file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Will create parent folders if needed.` },
+          overwrite: { type: 'boolean', description: 'Whether to overwrite destination file if it exists. Default: false.' }
+        },
+        required: ['sourcePath', 'destinationPath']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'copyFolder',
+      description: `DUPLICATION TOOL: Create complete copies of folders and all their contents. Useful for backups, creating project templates, or duplicating directory structures.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          sourcePath: { type: 'string', description: `Source folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing directory.` },
+          destinationPath: { type: 'string', description: `Destination folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Will create parent folders if needed.` },
+          overwrite: { type: 'boolean', description: 'Whether to overwrite destination folder if it exists. Default: false.' }
+        },
+        required: ['sourcePath', 'destinationPath']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getFileInfo',
+      description: `INSPECTION TOOL: Get detailed information about files including size, modification date, permissions, and type. Essential for understanding file properties before operations.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: `File or folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must exist.` }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'searchFiles',
+      description: `DISCOVERY TOOL: Search for files by name pattern or content. Use for finding files when you don't know exact locations or searching within file contents.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search term or pattern to find in filenames or content.' },
+          path: { type: 'string', description: `Directory to search within (relative to '${WORKSPACE_DIRECTORY_NAME}'). Searches recursively.` },
+          searchContent: { type: 'boolean', description: 'Whether to search inside file contents. Default: false (filename only).' },
+          extension: { type: 'string', description: 'Filter results by file extension (e.g., "txt", "js"). Omit the dot.' }
+        },
+        required: ['query']
+      }
+    }
   }
 ];
 
@@ -348,6 +411,145 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
       await fs.mkdir(path.dirname(safeNewPath), { recursive: true });
       await fs.rename(safeOldPath, safeNewPath);
       return { success: true, message: `File renamed from '${args.oldPath}' to '${args.newPath}'.` };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+
+  copyFile: async (args: { sourcePath: string; destinationPath: string; overwrite?: boolean }) => {
+    try {
+      const safeSrcPath = getSafeWorkspacePath(args.sourcePath);
+      const safeDestPath = getSafeWorkspacePath(args.destinationPath);
+      
+      // Check if destination exists and overwrite is not allowed
+      try {
+        await fs.access(safeDestPath);
+        if (!args.overwrite) {
+          return { error: `Destination file '${args.destinationPath}' already exists. Use overwrite=true to replace.` };
+        }
+      } catch {
+        // File doesn't exist, proceed
+      }
+      
+      await fs.mkdir(path.dirname(safeDestPath), { recursive: true });
+      await fs.copyFile(safeSrcPath, safeDestPath);
+      return { success: true, message: `File copied from '${args.sourcePath}' to '${args.destinationPath}'.` };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+
+  copyFolder: async (args: { sourcePath: string; destinationPath: string; overwrite?: boolean }) => {
+    try {
+      const safeSrcPath = getSafeWorkspacePath(args.sourcePath);
+      const safeDestPath = getSafeWorkspacePath(args.destinationPath);
+      
+      // Check if destination exists and overwrite is not allowed
+      try {
+        await fs.access(safeDestPath);
+        if (!args.overwrite) {
+          return { error: `Destination folder '${args.destinationPath}' already exists. Use overwrite=true to replace.` };
+        }
+        // Remove existing destination if overwrite is true
+        await fs.rm(safeDestPath, { recursive: true, force: true });
+      } catch {
+        // Folder doesn't exist, proceed
+      }
+      
+      await fs.mkdir(path.dirname(safeDestPath), { recursive: true });
+      await fs.cp(safeSrcPath, safeDestPath, { recursive: true });
+      return { success: true, message: `Folder copied from '${args.sourcePath}' to '${args.destinationPath}'.` };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+
+  getFileInfo: async (args: { path: string }) => {
+    try {
+      const safePath = getSafeWorkspacePath(args.path);
+      const stats = await fs.stat(safePath);
+      
+      return {
+        success: true,
+        path: args.path,
+        size: stats.size,
+        type: stats.isFile() ? 'file' : stats.isDirectory() ? 'directory' : 'other',
+        created: stats.birthtime.toISOString(),
+        modified: stats.mtime.toISOString(),
+        accessed: stats.atime.toISOString(),
+        permissions: {
+          readable: !!(stats.mode & 0o444),
+          writable: !!(stats.mode & 0o222),
+          executable: !!(stats.mode & 0o111),
+          mode: '0' + (stats.mode & parseInt('777', 8)).toString(8)
+        }
+      };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+
+  searchFiles: async (args: { query: string; path?: string; searchContent?: boolean; extension?: string }) => {
+    try {
+      const searchPath = getSafeWorkspacePath(args.path || '.');
+      const results: Array<{ path: string; type: 'filename' | 'content'; line?: number; preview?: string }> = [];
+      
+      const searchInDirectory = async (dirPath: string, relativePath: string = '') => {
+        const entries = await fs.readdir(dirPath, { withFileTypes: true });
+        
+        for (const entry of entries) {
+          const entryPath = path.join(dirPath, entry.name);
+          const entryRelativePath = path.join(relativePath, entry.name);
+          
+          if (entry.isDirectory()) {
+            await searchInDirectory(entryPath, entryRelativePath);
+          } else if (entry.isFile()) {
+            // Filter by extension if specified
+            if (args.extension) {
+              const ext = args.extension.startsWith('.') ? args.extension : `.${args.extension}`;
+              if (!entry.name.endsWith(ext)) continue;
+            }
+            
+            // Search filename
+            if (entry.name.toLowerCase().includes(args.query.toLowerCase())) {
+              results.push({
+                path: entryRelativePath,
+                type: 'filename'
+              });
+            }
+            
+            // Search content if requested
+            if (args.searchContent) {
+              try {
+                const content = await fs.readFile(entryPath, 'utf-8');
+                const lines = content.split('\n');
+                lines.forEach((line, index) => {
+                  if (line.toLowerCase().includes(args.query.toLowerCase())) {
+                    results.push({
+                      path: entryRelativePath,
+                      type: 'content',
+                      line: index + 1,
+                      preview: line.trim().substring(0, 100) + (line.length > 100 ? '...' : '')
+                    });
+                  }
+                });
+              } catch {
+                // Skip files that can't be read as text
+              }
+            }
+          }
+        }
+      };
+      
+      await searchInDirectory(searchPath);
+      
+      return {
+        success: true,
+        query: args.query,
+        searchPath: args.path || '.',
+        results,
+        resultCount: results.length
+      };
     } catch (error: any) {
       return { error: error.message };
     }

@@ -4,10 +4,9 @@
 This is an OpenRouter agent CLI tool for file operations, CSV manipulation, todo management, and web content fetching.
 
 ## Commands
-- `npm run dev` - Start Ink-based UI interface (main)
-- `npm run console` - Start console interface (backup)
+- `npm run dev` - Start development interface
 - `npm run build` - Build TypeScript to JavaScript
-- `npm start` - Run built version (Ink interface)
+- `npm start` - Run built version
 
 ## Project Structure
 
@@ -25,8 +24,7 @@ src/
 │   ├── csv-tools.ts     # CSV data manipulation
 │   ├── todo-tools.ts    # Todo list management
 │   └── web-tools.ts     # Web content fetching
-├── cli/            # CLI interfaces
-│   ├── console.ts  # Console-based CLI
+├── cli/            # CLI interface
 │   └── ink.tsx     # Ink-based UI
 └── index.ts        # Main entry point
 ```
@@ -36,7 +34,7 @@ src/
 1. Create tool definitions in the appropriate `src/tools/*-tools.ts` file
 2. Implement the tool functions in the same file  
 3. Export tools and implementations from `src/tools/index.ts`
-4. The tools will automatically be available in both CLI interfaces
+4. The tools will automatically be available in the CLI interface
 
 ## Configuration
 

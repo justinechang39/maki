@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import { Spinner } from '@inkjs/ui';
 import chalk from 'chalk';
@@ -9,6 +9,7 @@ import { callOpenRouterAPI } from '../core/api.js';
 import { tools, toolImplementations } from '../tools/index.js';
 import type { Message, DisplayMessage, ToolCall } from '../core/types.js';
 import { ThreadDatabase } from '../core/database.js';
+import { SYSTEM_PROMPT } from '../core/system-prompt.js';
 
 interface AppProps {}
 
@@ -53,6 +54,47 @@ const ThreadSelector: React.FC<{
   );
 };
 
+const ThreadManager: React.FC<{
+  thread: ThreadListItem;
+  selectedIndex: number;
+  onContinue: () => void;
+  onDelete: () => void;
+  onBack: () => void;
+  isDeleting?: boolean;
+}> = ({ thread, selectedIndex, onContinue, onDelete, onBack, isDeleting = false }) => {
+  const options = [
+    { name: '▶️  Continue thread', action: onContinue },
+    { name: '🗑️  Delete thread', action: onDelete },
+    { name: '← Back to thread list', action: onBack }
+  ];
+
+  useInput((input, key) => {
+    if (key.return && !isDeleting) {
+      options[selectedIndex].action();
+    }
+  });
+
+  return (
+    <Box flexDirection="column" padding={1}>
+      <Text bold>Thread: {thread.title || 'Untitled'}</Text>
+      <Text dimColor>{thread.messageCount} messages • Created {thread.createdAt.toLocaleDateString()}</Text>
+      <Box marginTop={1}>
+        {options.map((option, index) => (
+          <Box key={index}>
+            <Text color={index === selectedIndex ? 'blue' : 'white'}>
+              {index === selectedIndex ? '> ' : '  '}{option.name}
+              {index === 1 && isDeleting ? ' (Deleting...)' : ''}
+            </Text>
+          </Box>
+        ))}
+      </Box>
+      <Box marginTop={1}>
+        <Text dimColor>Press Enter to select, use ↑↓ to navigate</Text>
+      </Box>
+    </Box>
+  );
+};
+
 const App: React.FC<AppProps> = () => {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [inputText, setInputText] = useState('');
@@ -60,9 +102,14 @@ const App: React.FC<AppProps> = () => {
   const [conversationHistory, setConversationHistory] = useState<Message[]>([]);
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
   const [isSelectingThread, setIsSelectingThread] = useState(true);
+  const [isManagingThread, setIsManagingThread] = useState(false);
+  const [selectedThread, setSelectedThread] = useState<ThreadListItem | null>(null);
   const [threads, setThreads] = useState<ThreadListItem[]>([]);
   const [selectedThreadIndex, setSelectedThreadIndex] = useState(0);
+  const [threadManagementIndex, setThreadManagementIndex] = useState(0);
   const [isLoadingThreads, setIsLoadingThreads] = useState(true);
+  const [isDeletingThread, setIsDeletingThread] = useState(false);
+  const isCreatingThread = useRef(false);
   const { exit } = useApp();
 
   // Load threads on mount
@@ -83,59 +130,150 @@ const App: React.FC<AppProps> = () => {
 
   // Handle thread selection
   const handleThreadSelect = useCallback(async (threadIdOrNew: string | 'new') => {
-    try {
-      let threadId: string;
-      
-      if (threadIdOrNew === 'new') {
-        threadId = await ThreadDatabase.createThread();
-      } else {
-        threadId = threadIdOrNew;
-      }
-      
-      setCurrentThreadId(threadId);
-      
-      // Load thread history if it exists
-      let thread: any = null;
-      if (threadIdOrNew !== 'new') {
-        thread = await ThreadDatabase.getThread(threadId);
-        if (thread && thread.messages.length > 0) {
-          const loadedHistory = thread.messages.map(msg => ({
-            role: msg.role.toLowerCase() as 'user' | 'assistant' | 'system' | 'tool',
-            content: msg.content,
-            ...(msg.toolCalls && { tool_calls: msg.toolCalls }),
-            ...(msg.role === 'TOOL' && msg.toolResponses?.[0] && {
-              tool_call_id: msg.toolResponses[0].tool_call_id,
-              name: msg.toolResponses[0].name
-            })
-          }));
-          
-          setConversationHistory(loadedHistory);
-          
-          // Display loaded messages
-          const displayMessages = thread.messages
-            .filter(msg => msg.role !== 'SYSTEM')
-            .map(msg => ({
-              role: msg.role.toLowerCase() as 'user' | 'assistant',
-              content: msg.content
-            }));
-          setMessages(displayMessages as DisplayMessage[]);
+    if (threadIdOrNew === 'new') {
+      // Create new thread and go straight to chat
+      try {
+        // Prevent duplicate creation using ref (immediate check)
+        if (currentThreadId || isCreatingThread.current) {
+          setIsSelectingThread(false);
+          return;
         }
-      }
-      
-      // Add system message for new threads
-      if (threadIdOrNew === 'new' || !thread?.messages.length) {
+        
+        isCreatingThread.current = true;
+        const threadId = await ThreadDatabase.createThread();
+        setCurrentThreadId(threadId);
+        
         const systemMessage: Message = {
           role: 'system',
-          content: 'You are a helpful file management assistant. You have access to tools for working with files, CSV data, todos, and web content within a designated workspace. Use the available tools to help users with their requests. Be concise and helpful in your responses.'
+          content: SYSTEM_PROMPT
+        };
+        setConversationHistory([systemMessage]);
+        setIsSelectingThread(false);
+      } catch (error) {
+        console.error('Failed to create thread:', error);
+      } finally {
+        isCreatingThread.current = false;
+      }
+    } else {
+      // Show thread management for existing threads
+      const thread = threads.find(t => t.id === threadIdOrNew);
+      if (thread) {
+        setSelectedThread(thread);
+        setIsSelectingThread(false);
+        setIsManagingThread(true);
+        setThreadManagementIndex(0);
+      }
+    }
+  }, [currentThreadId, threads]);
+
+  // Handle thread management actions
+  const handleContinueThread = useCallback(async () => {
+    if (!selectedThread) return;
+    
+    try {
+      setCurrentThreadId(selectedThread.id);
+      
+      // Load thread history
+      const thread = await ThreadDatabase.getThread(selectedThread.id);
+      if (thread && thread.messages.length > 0) {
+        const loadedHistory = thread.messages.map(msg => ({
+          role: msg.role.toLowerCase() as 'user' | 'assistant' | 'system' | 'tool',
+          content: msg.content,
+          ...(msg.toolCalls && { tool_calls: msg.toolCalls }),
+          ...(msg.role === 'TOOL' && msg.toolResponses?.[0] && {
+            tool_call_id: msg.toolResponses[0].tool_call_id,
+            name: msg.toolResponses[0].name
+          })
+        }));
+        
+        setConversationHistory(loadedHistory);
+        
+        // Display loaded messages
+        const displayMessages = thread.messages
+          .filter(msg => msg.role !== 'SYSTEM')
+          .map(msg => ({
+            role: msg.role.toLowerCase() as 'user' | 'assistant',
+            content: msg.content
+          }));
+        setMessages(displayMessages as DisplayMessage[]);
+      } else {
+        // Add system message if no messages exist
+        const systemMessage: Message = {
+          role: 'system',
+          content: SYSTEM_PROMPT
         };
         setConversationHistory([systemMessage]);
       }
       
-      setIsSelectingThread(false);
+      setIsManagingThread(false);
     } catch (error) {
-      console.error('Failed to select thread:', error);
+      console.error('Failed to continue thread:', error);
     }
+  }, [selectedThread]);
+
+  const handleDeleteThread = useCallback(async () => {
+    if (!selectedThread || isDeletingThread) return;
+    
+    console.log('🚀 Attempting to delete thread:', selectedThread);
+    console.log('🔍 Thread ID type:', typeof selectedThread.id, 'Value:', selectedThread.id);
+    
+    setIsDeletingThread(true);
+    
+    try {
+      await ThreadDatabase.deleteThread(selectedThread.id);
+      
+      // Refresh thread list
+      const threadList = await ThreadDatabase.getAllThreads();
+      setThreads(threadList);
+      
+      // Go back to thread selection
+      setIsManagingThread(false);
+      setIsSelectingThread(true);
+      setSelectedThread(null);
+      setSelectedThreadIndex(0);
+    } catch (error) {
+      console.error('Failed to delete thread:', error);
+    } finally {
+      setIsDeletingThread(false);
+    }
+  }, [selectedThread, isDeletingThread]);
+
+  const handleBackToThreadList = useCallback(() => {
+    setIsManagingThread(false);
+    setIsSelectingThread(true);
+    setSelectedThread(null);
   }, []);
+
+  // Generate thread title based on first message
+  const generateThreadTitle = useCallback(async (userMessage: string, threadId: string) => {
+    try {
+      const titlePrompt = [
+        {
+          role: 'system' as const,
+          content: 'You are a helpful assistant that generates concise, descriptive titles for conversation threads. Based on the user\'s first message, create a short title (max 50 characters) that captures the main topic or request. Return only the title, nothing else.'
+        },
+        {
+          role: 'user' as const,
+          content: `Generate a title for this conversation: "${userMessage}"`
+        }
+      ];
+
+      const titleResponse = await callOpenRouterAPI(titlePrompt, []);
+      const title = titleResponse.choices?.[0]?.message?.content?.trim() || 'Untitled';
+      
+      // Update thread title in database
+      await ThreadDatabase.updateThreadTitle(threadId, title);
+      
+      // Refresh thread list if we're viewing it
+      if (isSelectingThread || isManagingThread) {
+        const threadList = await ThreadDatabase.getAllThreads();
+        setThreads(threadList);
+      }
+      
+    } catch (error) {
+      console.error('Failed to generate thread title:', error);
+    }
+  }, [isSelectingThread, isManagingThread]);
 
   const executeToolCall = useCallback(async (toolCall: ToolCall): Promise<any> => {
     const { name, arguments: argsString } = toolCall.function;
@@ -278,6 +416,13 @@ const App: React.FC<AppProps> = () => {
     // Save user message to database
     if (currentThreadId) {
       await ThreadDatabase.addMessage(currentThreadId, 'USER', userInput);
+      
+      // Check if this is the first user message (only system message exists)
+      const isFirstMessage = conversationHistory.length === 1 && conversationHistory[0].role === 'system';
+      if (isFirstMessage) {
+        // Generate thread title in the background
+        generateThreadTitle(userInput, currentThreadId);
+      }
     }
 
     try {
@@ -321,6 +466,17 @@ const App: React.FC<AppProps> = () => {
           ...threads.map(thread => ({ name: '', value: thread.id }))
         ];
         handleThreadSelect(items[selectedThreadIndex].value);
+      } else if (key.ctrl && input === 'c') {
+        exit();
+      }
+    } else if (isManagingThread) {
+      if (key.upArrow && !isDeletingThread) {
+        setThreadManagementIndex(prev => Math.max(0, prev - 1));
+      } else if (key.downArrow && !isDeletingThread) {
+        setThreadManagementIndex(prev => Math.min(2, prev + 1));
+      } else if (key.return && !isDeletingThread) {
+        const actions = [handleContinueThread, handleDeleteThread, handleBackToThreadList];
+        actions[threadManagementIndex]();
       } else if (key.ctrl && input === 'c') {
         exit();
       }
@@ -368,6 +524,25 @@ const App: React.FC<AppProps> = () => {
           threads={threads}
           selectedIndex={selectedThreadIndex}
           onSelect={handleThreadSelect}
+        />
+      </Box>
+    );
+  }
+
+  if (isManagingThread && selectedThread) {
+    return (
+      <Box flexDirection="column" height="100%">
+        <Box borderStyle="round" borderColor="gray" padding={1} marginBottom={1}>
+          <Text bold>OpenRouter Agent CLI (Ink Interface)</Text>
+        </Box>
+        
+        <ThreadManager
+          thread={selectedThread}
+          selectedIndex={threadManagementIndex}
+          onContinue={handleContinueThread}
+          onDelete={handleDeleteThread}
+          onBack={handleBackToThreadList}
+          isDeleting={isDeletingThread}
         />
       </Box>
     );

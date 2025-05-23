@@ -1,4 +1,4 @@
-import { PrismaClient } from '../generated/prisma/index.js'
+import { PrismaClient } from '@prisma/client'
 
 export const prisma = new PrismaClient()
 
@@ -39,12 +39,18 @@ export class ThreadDatabase {
       orderBy: { updatedAt: 'desc' }
     })
     
-    return threads.map((thread: any) => ({
+    console.log('📋 Raw threads from database:', threads.map(t => ({ id: t.id, title: t.title })))
+    
+    const result = threads.map((thread: any) => ({
       id: thread.id,
       title: thread.title || undefined,
       createdAt: thread.createdAt,
       messageCount: thread._count.messages
     }))
+    
+    console.log('📋 Processed threads for UI:', result.map(t => ({ id: t.id, title: t.title })))
+    
+    return result
   }
 
   static async getThread(threadId: string): Promise<StoredThread | null> {
@@ -107,9 +113,24 @@ export class ThreadDatabase {
   }
 
   static async deleteThread(threadId: string): Promise<void> {
-    await prisma.thread.delete({
-      where: { id: threadId }
-    })
+    console.log('🗑️ Attempting to delete thread with ID:', threadId)
+    
+    try {
+      const result = await prisma.thread.delete({
+        where: { id: threadId }
+      })
+      
+      console.log('✅ Thread deleted successfully:', result.id)
+    } catch (error: any) {
+      // If the thread doesn't exist, that's fine - it's already deleted
+      if (error.code === 'P2025') {
+        console.log('⚠️ Thread was already deleted or does not exist')
+        return
+      }
+      
+      // Re-throw other errors
+      throw error
+    }
   }
 
   static async disconnect(): Promise<void> {

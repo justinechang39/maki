@@ -6,9 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
-    "start": "node dist/src/cli/ink.js",
-    "dev": "npx tsx src/cli/ink.tsx",
-    "console": "npx tsx src/cli/console.ts"
+    "start": "node dist/cli/ink.js",
+    "dev": "npx tsx src/cli/ink.tsx"
   },
   "author": "",
   "license": "ISC",
