@@ -7,7 +7,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "ts-node index.ts"
+    "dev": "ts-node index.ts",
+    "ink": "npx tsx index-ink.tsx"
   },
   "author": "",
   "license": "ISC",
@@ -17,14 +18,18 @@
     "@prisma/client": "^6.8.2",
     "chalk": "^4.1.2",
     "fast-csv": "^5.0.2",
+    "ink": "^5.2.1",
     "inquirer": "^9.3.7",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "react": "^18.3.1"
   },
   "devDependencies": {
     "@types/inquirer": "^9.0.7",
     "@types/node": "^20.17.47",
+    "@types/react": "^18.3.22",
     "prisma": "^6.8.2",
     "ts-node": "^10.9.2",
+    "tsx": "^4.19.2",
     "typescript": "^5.8.3"
   }
 }
