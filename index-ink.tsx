@@ -1340,60 +1340,95 @@ interface ToolExecutionProps {
 }
 
 const ToolExecution: React.FC<ToolExecutionProps> = ({ toolName, toolId }) => (
-  <Box>
-    <Text color="yellow">🛠️ Executing tool: </Text>
-    <Text color="cyan">{toolName}</Text>
-    <Text color="gray"> (ID: {toolId})</Text>
+  <Box marginBottom={1}>
+    <Text color="yellow">⚡ </Text>
+    <Text color="cyan" bold>{toolName}</Text>
+    <Text color="gray"> executing...</Text>
   </Box>
 );
 
-interface AgentThinkingProps {
-  thoughts: string;
+interface StatusBarProps {
+  isProcessing: boolean;
+  toolExecutions: Array<{ toolName: string; toolId: string }>;
 }
 
-const AgentThinking: React.FC<AgentThinkingProps> = ({ thoughts }) => (
-  <Box>
-    <Text color="magenta">🤔 Agent thinking: </Text>
-    <Text color="white">{thoughts.substring(0, 150)}{thoughts.length > 150 ? '...' : ''}</Text>
-  </Box>
-);
-
-interface SystemStatusProps {
-  status: string;
-  color?: string;
-}
-
-const SystemStatus: React.FC<SystemStatusProps> = ({ status, color = 'cyan' }) => (
-  <Box>
-    <Text color="gray">⚙️ </Text>
-    <Text color={color}>{status}</Text>
-  </Box>
-);
+const StatusBar: React.FC<StatusBarProps> = ({ isProcessing, toolExecutions }) => {
+  if (!isProcessing && toolExecutions.length === 0) return null;
+  
+  return (
+    <Box borderStyle="single" borderColor="yellow" paddingX={2} paddingY={0} marginBottom={1}>
+      {isProcessing && (
+        <Text color="yellow">⏳ Processing your request...</Text>
+      )}
+      {toolExecutions.map((tool, index) => (
+        <ToolExecution key={`tool-${index}`} toolName={tool.toolName} toolId={tool.toolId} />
+      ))}
+    </Box>
+  );
+};
 
 interface ChatMessageProps {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  isLatest?: boolean;
 }
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ role, content }) => {
-  const getPrefix = () => {
+const ChatMessage: React.FC<ChatMessageProps> = ({ role, content, isLatest = false }) => {
+  const formatContent = (text: string) => {
+    // Split by lines and handle long lines
+    const lines = text.split('\n');
+    return lines.map((line, index) => (
+      <Text key={index} wrap="wrap">
+        {line}
+      </Text>
+    ));
+  };
+
+  const getMessageStyle = () => {
     switch (role) {
       case 'user':
-        return <Text color="blue">👤 </Text>;
+        return {
+          prefix: '❯',
+          prefixColor: 'blue' as const,
+          contentColor: 'white' as const,
+          label: 'You'
+        };
       case 'assistant':
-        return <Text color="green">🤖 </Text>;
+        return {
+          prefix: '●',
+          prefixColor: 'green' as const,
+          contentColor: 'white' as const,
+          label: 'Assistant'
+        };
       case 'system':
-        return <Text color="gray">⚙️ </Text>;
+        return {
+          prefix: '▲',
+          prefixColor: 'yellow' as const,
+          contentColor: 'gray' as const,
+          label: 'System'
+        };
       default:
-        return <Text>💬 </Text>;
+        return {
+          prefix: '◆',
+          prefixColor: 'gray' as const,
+          contentColor: 'white' as const,
+          label: 'Unknown'
+        };
     }
   };
 
+  const style = getMessageStyle();
+
   return (
-    <Box flexDirection="column" marginY={0}>
-      <Box>
-        {getPrefix()}
-        <Text color="white">{content}</Text>
+    <Box flexDirection="column" marginBottom={isLatest ? 2 : 1}>
+      <Box marginBottom={1}>
+        <Text color={style.prefixColor} bold>{style.prefix} </Text>
+        <Text color={style.prefixColor} bold>{style.label}</Text>
+      </Box>
+      <Box paddingLeft={2}>
+        <Box flexDirection="column">
+          {formatContent(content)}
+        </Box>
       </Box>
     </Box>
   );
@@ -1404,54 +1439,63 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ workspaceDir }) => (
-  <Box flexDirection="column" borderStyle="round" borderColor="magenta" padding={1} marginBottom={1}>
-    <Text color="magenta" bold>🤖 File Assistant CLI with Ink 🤖</Text>
-    <Text color="cyan">Working with files in: {workspaceDir}</Text>
-    <Text color="gray">Commands: /exit (exit) | /reset (reset conversation) | Type your request</Text>
+  <Box flexDirection="column" marginBottom={2}>
+    <Box>
+      <Text color="magenta" bold>File Assistant CLI</Text>
+      <Text color="gray"> - AI-powered file management</Text>
+    </Box>
+    <Box marginTop={1}>
+      <Text color="cyan">Workspace: </Text>
+      <Text color="white">{workspaceDir}</Text>
+    </Box>
+    <Box marginTop={1}>
+      <Text color="gray">Commands: </Text>
+      <Text color="white">/exit</Text>
+      <Text color="gray"> • </Text>
+      <Text color="white">/reset</Text>
+      <Text color="gray"> • or type your request</Text>
+    </Box>
   </Box>
 );
 
-interface ConversationHistoryProps {
+interface ConversationProps {
   messages: Message[];
-  currentToolExecutions: Array<{ toolName: string; toolId: string }>;
-  systemMessages: Array<{ message: string; color: string }>;
 }
 
-const ConversationHistory: React.FC<ConversationHistoryProps> = ({ messages, currentToolExecutions, systemMessages }) => (
-  <Box flexDirection="column" height="80%" overflowY="hidden">
-    {/* Show recent system messages */}
-    {systemMessages.slice(-3).map((msg, index) => (
-      <SystemStatus key={`system-${index}`} status={msg.message} color={msg.color} />
-    ))}
-    
-    {/* Show recent conversation messages */}
-    {messages.slice(-10).map((message, index) => {
-      if (message.role === 'user' || (message.role === 'assistant' && message.content)) {
-        return (
-          <ChatMessage
-            key={`msg-${index}`}
-            role={message.role}
-            content={message.content || ''}
-          />
-        );
-      }
-      return null;
-    })}
-    
-    {/* Show current tool executions */}
-    {currentToolExecutions.map((tool, index) => (
-      <ToolExecution key={`tool-${index}`} toolName={tool.toolName} toolId={tool.toolId} />
-    ))}
-  </Box>
-);
+const Conversation: React.FC<ConversationProps> = ({ messages }) => {
+  // Only show user and assistant messages with content
+  const displayMessages = messages.filter(msg => 
+    (msg.role === 'user' || msg.role === 'assistant') && msg.content
+  ).slice(-8); // Show last 8 messages to prevent clutter
 
-interface InputPromptProps {
-  prompt: string;
+  if (displayMessages.length === 0) {
+    return (
+      <Box marginBottom={2}>
+        <Text color="gray" italic>Start by typing your request below...</Text>
+      </Box>
+    );
+  }
+
+  return (
+    <Box flexDirection="column" marginBottom={2}>
+      {displayMessages.map((message, index) => (
+        <ChatMessage
+          key={`msg-${index}`}
+          role={message.role}
+          content={message.content || ''}
+          isLatest={index === displayMessages.length - 1}
+        />
+      ))}
+    </Box>
+  );
+};
+
+interface InputAreaProps {
   onSubmit: (input: string) => void;
   disabled?: boolean;
 }
 
-const InputPrompt: React.FC<InputPromptProps> = ({ prompt, onSubmit, disabled = false }) => {
+const InputArea: React.FC<InputAreaProps> = ({ onSubmit, disabled = false }) => {
   const [input, setInput] = useState('');
 
   useInput((inputKey, key) => {
@@ -1464,16 +1508,25 @@ const InputPrompt: React.FC<InputPromptProps> = ({ prompt, onSubmit, disabled = 
       }
     } else if (key.backspace || key.delete) {
       setInput(prev => prev.slice(0, -1));
-    } else if (inputKey && !key.ctrl && !key.meta) {
+    } else if (key.ctrl && inputKey === 'c') {
+      process.exit(0);
+    } else if (inputKey && !key.ctrl && !key.meta && !key.escape) {
       setInput(prev => prev + inputKey);
     }
   });
 
   return (
-    <Box>
-      <Text color="blue">👤 {prompt}: </Text>
-      <Text color="white">{input}</Text>
-      <Text color="gray">{disabled ? ' (Processing...)' : ''}</Text>
+    <Box borderStyle="single" borderColor={disabled ? "gray" : "blue"} paddingX={2} paddingY={1}>
+      <Box>
+        <Text color={disabled ? "gray" : "blue"}>❯ </Text>
+        <Text color={disabled ? "gray" : "white"}>{input}</Text>
+        <Text color="blue">{disabled ? "" : "█"}</Text>
+      </Box>
+      {disabled && (
+        <Box marginTop={1}>
+          <Text color="yellow">Processing... Please wait</Text>
+        </Box>
+      )}
     </Box>
   );
 };
@@ -1523,14 +1576,7 @@ Key Instructions:
   ]);
   
   const [currentToolExecutions, setCurrentToolExecutions] = useState<Array<{ toolName: string; toolId: string }>>([]);
-  const [systemMessages, setSystemMessages] = useState<Array<{ message: string; color: string }>>([
-    { message: `Workspace directory: ${WORKSPACE_DIRECTORY}`, color: 'gray' }
-  ]);
   const [isProcessing, setIsProcessing] = useState(false);
-
-  const addSystemMessage = useCallback((message: string, color: string = 'cyan') => {
-    setSystemMessages(prev => [...prev, { message, color }]);
-  }, []);
 
   const handleToolExecution = useCallback(async (toolCall: ToolCall): Promise<any> => {
     const toolName = toolCall.function.name;
@@ -1553,14 +1599,6 @@ Key Instructions:
     const implementation = toolImplementations[toolName];
     if (implementation) {
       try {
-        // Special handling for think tool
-        if (toolName === 'think') {
-          setSystemMessages(prev => [...prev, { 
-            message: `Agent thinking: ${args.thoughts.substring(0, 150)}${args.thoughts.length > 150 ? '...' : ''}`, 
-            color: 'magenta' 
-          }]);
-        }
-        
         const result = await implementation(args);
         setCurrentToolExecutions(prev => prev.filter(t => t.toolId !== toolCall.id));
         return result;
@@ -1579,14 +1617,11 @@ Key Instructions:
     
     const validatedMessages = validateConversationHistory(workingMessages);
     if (validatedMessages.length !== workingMessages.length) {
-      addSystemMessage('Conversation history was cleaned by validateConversationHistory.', 'yellow');
       workingMessages = validatedMessages;
     }
 
     while (true) {
       try {
-        addSystemMessage('Calling LLM...', 'cyan');
-
         const response = await fetch(API_URL, {
           method: 'POST',
           headers: {
@@ -1623,7 +1658,6 @@ Key Instructions:
         workingMessages.push(assistantMessage);
 
         if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
-          addSystemMessage(`Assistant requests ${assistantMessage.tool_calls.length} tool call(s).`, 'yellow');
           const toolResponses: Message[] = [];
 
           for (const toolCall of assistantMessage.tool_calls) {
@@ -1650,7 +1684,6 @@ Key Instructions:
           return workingMessages;
         }
       } catch (error: any) {
-        addSystemMessage(`Agent loop error: ${error.message}`, 'red');
         workingMessages.push({
           role: 'assistant',
           content: `An error occurred: ${error.message}. The user might need to rephrase or simplify the request.`
@@ -1658,7 +1691,7 @@ Key Instructions:
         return workingMessages;
       }
     }
-  }, [addSystemMessage, handleToolExecution]);
+  }, [handleToolExecution]);
 
   const handleUserInput = useCallback(async (input: string) => {
     if (input.toLowerCase() === '/exit') {
@@ -1667,14 +1700,11 @@ Key Instructions:
     }
     
     if (input.toLowerCase() === '/reset') {
-      addSystemMessage('Resetting conversation history...', 'yellow');
       setMessages([messages[0]]);
-      addSystemMessage('Conversation reset.', 'green');
       return;
     }
 
     if (!input.trim()) {
-      addSystemMessage('Please enter a command or question.', 'yellow');
       return;
     }
 
@@ -1693,12 +1723,6 @@ Key Instructions:
     let newMessages = [...messages];
     
     if (hadRecentError || hasUnresolvedToolCallsInHistory || messages.length > MAX_CONVERSATION_LENGTH) {
-      let reason = "";
-      if (hadRecentError) reason = "due to a recent error";
-      else if (hasUnresolvedToolCallsInHistory) reason = "due to unresolved tool calls";
-      else if (messages.length > MAX_CONVERSATION_LENGTH) reason = "conversation is too long";
-      
-      addSystemMessage(`Resetting conversation history ${reason}. Starting fresh with your input.`, 'yellow');
       newMessages = [
         messages[0],
         { role: 'user', content: input }
@@ -1709,7 +1733,6 @@ Key Instructions:
     
     const potentiallyCleanedMessages = validateConversationHistory(newMessages);
     if (potentiallyCleanedMessages.length < newMessages.length) {
-        addSystemMessage('Applied validation cleanup to messages before calling agent.', 'yellow');
         newMessages = potentiallyCleanedMessages;
         const lastMsg = newMessages[newMessages.length -1];
         if (!lastMsg || lastMsg.role !== 'user' || lastMsg.content !== input) {
@@ -1720,47 +1743,46 @@ Key Instructions:
     const updatedMessages = await agentLoop(newMessages);
     setMessages(updatedMessages);
     setIsProcessing(false);
-  }, [messages, addSystemMessage, agentLoop, exit]);
+  }, [messages, agentLoop, exit]);
 
   // Initialize workspace
   useEffect(() => {
     const initWorkspace = async () => {
       if (!OPENROUTER_API_KEY || OPENROUTER_API_KEY === 'sk-or-v1-YOUR-KEY-HERE') {
-        addSystemMessage('FATAL ERROR: OPENROUTER_API_KEY environment variable is not set or is a placeholder!', 'red');
-        addSystemMessage('Please set it, e.g., by running: export OPENROUTER_API_KEY="your_actual_api_key"', 'yellow');
+        console.error('FATAL ERROR: OPENROUTER_API_KEY environment variable is not set or is a placeholder!');
+        console.error('Please set it, e.g., by running: export OPENROUTER_API_KEY="your_actual_api_key"');
         setTimeout(() => exit(), 3000);
         return;
       }
 
       try {
         await fs.mkdir(WORKSPACE_DIRECTORY, { recursive: true });
-        addSystemMessage(`Workspace directory: ${WORKSPACE_DIRECTORY}`, 'gray');
       } catch (error: any) {
-        addSystemMessage(`Failed to create workspace directory '${WORKSPACE_DIRECTORY}': ${error.message}`, 'red');
+        console.error(`Failed to create workspace directory '${WORKSPACE_DIRECTORY}': ${error.message}`);
         setTimeout(() => exit(), 3000);
       }
     };
 
     initWorkspace();
-  }, [addSystemMessage, exit]);
+  }, [exit]);
 
   return (
-    <Box flexDirection="column" height="100%">
+    <Box flexDirection="column" height="100%" padding={1}>
       <Header workspaceDir={WORKSPACE_DIRECTORY_NAME} />
       
-      <ConversationHistory 
-        messages={messages}
-        currentToolExecutions={currentToolExecutions}
-        systemMessages={systemMessages}
+      <StatusBar 
+        isProcessing={isProcessing}
+        toolExecutions={currentToolExecutions}
       />
       
-      <Box borderStyle="single" borderColor="blue" padding={1}>
-        <InputPrompt 
-          prompt="Your request"
-          onSubmit={handleUserInput}
-          disabled={isProcessing}
-        />
+      <Box flexGrow={1} flexDirection="column">
+        <Conversation messages={messages} />
       </Box>
+      
+      <InputArea 
+        onSubmit={handleUserInput}
+        disabled={isProcessing}
+      />
     </Box>
   );
 };
