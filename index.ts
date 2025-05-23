@@ -8,6 +8,7 @@ import { URL } from 'url'; // <--- ADDED for URL parsing
 // For colored output (optional, install with: npm install chalk@4.1.2)
 // If you prefer not to use chalk, remove these lines and the chalk.xyz calls
 import chalk from 'chalk';
+import * as csv from 'fast-csv';
 const userPrefix = chalk.blue('👤');
 const assistantPrefix = chalk.green('🤖');
 const toolPrefix = chalk.yellow('🛠️');
@@ -234,6 +235,181 @@ const tools: Tool[] = [
       }
     }
   },
+  {
+    type: 'function',
+    function: {
+      name: 'parseCSV',
+      description: `Parse a CSV file in the workspace ('${WORKSPACE_DIRECTORY_NAME}') and return its structure and data.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: `The CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
+          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers in the first row. Defaults to true.' }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'updateCSVCell',
+      description: `Update a specific cell in a CSV file by row and column identifiers.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: `The CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
+          rowIndex: { type: 'number', description: 'Zero-based row index (excluding headers if present).' },
+          column: { type: 'string', description: 'Column name (if headers exist) or zero-based column index as string.' },
+          value: { type: 'string', description: 'New value for the cell.' },
+          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers. Defaults to true.' }
+        },
+        required: ['path', 'rowIndex', 'column', 'value']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'addCSVRow',
+      description: `Add a new row to a CSV file.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: `The CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
+          rowData: { type: 'object', description: 'Object with column names as keys and cell values as values.' },
+          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers. Defaults to true.' }
+        },
+        required: ['path', 'rowData']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'removeCSVRow',
+      description: `Remove a row from a CSV file by index.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: `The CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
+          rowIndex: { type: 'number', description: 'Zero-based row index (excluding headers if present).' },
+          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers. Defaults to true.' }
+        },
+        required: ['path', 'rowIndex']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'filterCSV',
+      description: `Filter CSV rows based on column criteria and create a new CSV file.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          sourcePath: { type: 'string', description: `Source CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
+          targetPath: { type: 'string', description: `Target CSV file path where filtered results will be saved.` },
+          column: { type: 'string', description: 'Column name to filter by.' },
+          operator: { type: 'string', description: 'Filter operator: "equals", "contains", "startsWith", "endsWith", "greaterThan", "lessThan".', enum: ['equals', 'contains', 'startsWith', 'endsWith', 'greaterThan', 'lessThan'] },
+          value: { type: 'string', description: 'Value to compare against.' },
+          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers. Defaults to true.' }
+        },
+        required: ['sourcePath', 'targetPath', 'column', 'operator', 'value']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'sortCSV',
+      description: `Sort CSV rows by one or more columns.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: `The CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
+          sortColumns: { 
+            type: 'array', 
+            description: 'Array of column sort specifications.',
+            items: {
+              type: 'object',
+              properties: {
+                column: { type: 'string', description: 'Column name to sort by.' },
+                direction: { type: 'string', description: 'Sort direction: "asc" or "desc".', enum: ['asc', 'desc'] }
+              },
+              required: ['column', 'direction']
+            }
+          },
+          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers. Defaults to true.' }
+        },
+        required: ['path', 'sortColumns']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'addCSVColumn',
+      description: `Add a new column to a CSV file with optional default values.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: `The CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
+          columnName: { type: 'string', description: 'Name of the new column.' },
+          defaultValue: { type: 'string', description: 'Default value for existing rows. Defaults to empty string.' },
+          position: { type: 'number', description: 'Zero-based position to insert the column. Defaults to end.' },
+          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers. Defaults to true.' }
+        },
+        required: ['path', 'columnName']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'removeCSVColumn',
+      description: `Remove a column from a CSV file.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: `The CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
+          column: { type: 'string', description: 'Column name to remove.' },
+          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers. Defaults to true.' }
+        },
+        required: ['path', 'column']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'aggregateCSV',
+      description: `Perform aggregation operations on CSV data (sum, count, average, min, max) grouped by columns.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          sourcePath: { type: 'string', description: `Source CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
+          targetPath: { type: 'string', description: `Target CSV file path where aggregated results will be saved.` },
+          groupByColumns: { type: 'array', items: { type: 'string' }, description: 'Columns to group by.' },
+          aggregations: {
+            type: 'array',
+            description: 'Array of aggregation specifications.',
+            items: {
+              type: 'object',
+              properties: {
+                column: { type: 'string', description: 'Column to aggregate.' },
+                operation: { type: 'string', description: 'Aggregation operation.', enum: ['sum', 'count', 'average', 'min', 'max'] },
+                alias: { type: 'string', description: 'Optional alias for the result column.' }
+              },
+              required: ['column', 'operation']
+            }
+          },
+          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers. Defaults to true.' }
+        },
+        required: ['sourcePath', 'targetPath', 'aggregations']
+      }
+    }
+  },
   { // NEW TOOL DEFINITION
     type: 'function',
     function: {
@@ -411,6 +587,85 @@ function validateConversationHistory(messages: Message[]): Message[] {
   }
 
   return messages;
+}
+
+// --- CSV Helper Functions ---
+
+interface CSVRow {
+  [key: string]: string | number | boolean | null;
+}
+
+/**
+ * Parse CSV content from string to structured data
+ */
+async function parseCSVContent(content: string, hasHeaders: boolean = true): Promise<{ headers: string[]; rows: CSVRow[] }> {
+  return new Promise((resolve, reject) => {
+    const rows: any[] = [];
+    let headers: string[] = [];
+    
+    csv.parseString(content, { headers: hasHeaders })
+      .on('data', (row) => {
+        if (hasHeaders) {
+          rows.push(row);
+          if (headers.length === 0) {
+            headers = Object.keys(row);
+          }
+        } else {
+          rows.push(row);
+        }
+      })
+      .on('headers', (headerArray) => {
+        headers = headerArray;
+      })
+      .on('end', () => {
+        if (!hasHeaders && rows.length > 0) {
+          // Generate headers if not provided: Column1, Column2, etc.
+          headers = Object.keys(rows[0]).map((_, index) => `Column${index + 1}`);
+        }
+        resolve({ headers, rows });
+      })
+      .on('error', (error) => reject(error));
+  });
+}
+
+/**
+ * Convert structured data back to CSV string
+ */
+async function writeCSVContent(headers: string[], rows: CSVRow[], includeHeaders: boolean = true): Promise<string> {
+  return new Promise((resolve, reject) => {
+    csv.writeToString(rows, { 
+      headers: includeHeaders ? headers : false,
+      writeHeaders: includeHeaders
+    })
+    .then(data => resolve(data))
+    .catch(error => reject(error));
+  });
+}
+
+/**
+ * Validate if a file appears to be CSV format
+ */
+function isValidCSVContent(content: string): { valid: boolean; reason?: string } {
+  if (!content.trim()) {
+    return { valid: false, reason: 'File is empty' };
+  }
+  
+  const lines = content.split('\n').filter(line => line.trim());
+  if (lines.length === 0) {
+    return { valid: false, reason: 'No valid lines found' };
+  }
+  
+  // Check if first few lines have consistent comma count
+  const firstLineCommas = (lines[0].match(/,/g) || []).length;
+  const inconsistentLines = lines.slice(0, Math.min(5, lines.length)).filter(line => 
+    (line.match(/,/g) || []).length !== firstLineCommas
+  );
+  
+  if (inconsistentLines.length > 0) {
+    return { valid: false, reason: 'Inconsistent number of columns detected' };
+  }
+  
+  return { valid: true };
 }
 
 
@@ -715,6 +970,405 @@ const toolImplementations: Record<string, (args: any) => Promise<any>> = {
     } catch (error: any) {
       return { error: error.message };
     }
+  },
+  
+  // CSV Tool Implementations
+  parseCSV: async (args: { path: string; hasHeaders?: boolean }) => {
+    try {
+      const safePath = getSafeWorkspacePath(args.path);
+      const content = await fs.readFile(safePath, 'utf-8');
+      
+      const validation = isValidCSVContent(content);
+      if (!validation.valid) {
+        return { error: `Invalid CSV format: ${validation.reason}` };
+      }
+      
+      const hasHeaders = args.hasHeaders !== false;
+      const { headers, rows } = await parseCSVContent(content, hasHeaders);
+      
+      return {
+        success: true,
+        path: args.path,
+        headers,
+        rowCount: rows.length,
+        columnCount: headers.length,
+        preview: rows.slice(0, 5), // First 5 rows for preview
+        structure: headers.map(header => ({
+          name: header,
+          sampleValues: rows.slice(0, 3).map(row => row[header]).filter(val => val !== null && val !== '')
+        }))
+      };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+
+  updateCSVCell: async (args: { path: string; rowIndex: number; column: string; value: string; hasHeaders?: boolean }) => {
+    try {
+      const safePath = getSafeWorkspacePath(args.path);
+      const content = await fs.readFile(safePath, 'utf-8');
+      
+      const hasHeaders = args.hasHeaders !== false;
+      const { headers, rows } = await parseCSVContent(content, hasHeaders);
+      
+      if (args.rowIndex < 0 || args.rowIndex >= rows.length) {
+        return { error: `Invalid row index ${args.rowIndex}. File has ${rows.length} rows.` };
+      }
+      
+      // Determine column identifier
+      let columnKey = args.column;
+      if (hasHeaders && !headers.includes(args.column)) {
+        // Try to parse as numeric index
+        const colIndex = parseInt(args.column, 10);
+        if (isNaN(colIndex) || colIndex < 0 || colIndex >= headers.length) {
+          return { error: `Invalid column '${args.column}'. Available columns: ${headers.join(', ')}` };
+        }
+        columnKey = headers[colIndex];
+      }
+      
+      // Update the cell
+      rows[args.rowIndex][columnKey] = args.value;
+      
+      // Write back to file
+      const newContent = await writeCSVContent(headers, rows, hasHeaders);
+      await fs.writeFile(safePath, newContent, 'utf-8');
+      
+      return {
+        success: true,
+        message: `Updated cell at row ${args.rowIndex}, column '${columnKey}' to '${args.value}'`
+      };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+
+  addCSVRow: async (args: { path: string; rowData: Record<string, any>; hasHeaders?: boolean }) => {
+    try {
+      const safePath = getSafeWorkspacePath(args.path);
+      const content = await fs.readFile(safePath, 'utf-8');
+      
+      const hasHeaders = args.hasHeaders !== false;
+      const { headers, rows } = await parseCSVContent(content, hasHeaders);
+      
+      // Validate row data has all required columns
+      if (hasHeaders) {
+        const missingColumns = headers.filter(header => !(header in args.rowData));
+        const extraColumns = Object.keys(args.rowData).filter(key => !headers.includes(key));
+        
+        if (missingColumns.length > 0) {
+          // Fill missing columns with empty strings
+          missingColumns.forEach(col => args.rowData[col] = '');
+        }
+        if (extraColumns.length > 0) {
+          return { error: `Unknown columns: ${extraColumns.join(', ')}. Available columns: ${headers.join(', ')}` };
+        }
+      }
+      
+      rows.push(args.rowData);
+      
+      const newContent = await writeCSVContent(headers, rows, hasHeaders);
+      await fs.writeFile(safePath, newContent, 'utf-8');
+      
+      return {
+        success: true,
+        message: `Added new row. File now has ${rows.length} rows.`,
+        newRowIndex: rows.length - 1
+      };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+
+  removeCSVRow: async (args: { path: string; rowIndex: number; hasHeaders?: boolean }) => {
+    try {
+      const safePath = getSafeWorkspacePath(args.path);
+      const content = await fs.readFile(safePath, 'utf-8');
+      
+      const hasHeaders = args.hasHeaders !== false;
+      const { headers, rows } = await parseCSVContent(content, hasHeaders);
+      
+      if (args.rowIndex < 0 || args.rowIndex >= rows.length) {
+        return { error: `Invalid row index ${args.rowIndex}. File has ${rows.length} rows.` };
+      }
+      
+      const removedRow = rows.splice(args.rowIndex, 1)[0];
+      
+      const newContent = await writeCSVContent(headers, rows, hasHeaders);
+      await fs.writeFile(safePath, newContent, 'utf-8');
+      
+      return {
+        success: true,
+        message: `Removed row ${args.rowIndex}. File now has ${rows.length} rows.`,
+        removedRow
+      };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+
+  filterCSV: async (args: { sourcePath: string; targetPath: string; column: string; operator: string; value: string; hasHeaders?: boolean }) => {
+    try {
+      const sourceSafePath = getSafeWorkspacePath(args.sourcePath);
+      const targetSafePath = getSafeWorkspacePath(args.targetPath);
+      const content = await fs.readFile(sourceSafePath, 'utf-8');
+      
+      const hasHeaders = args.hasHeaders !== false;
+      const { headers, rows } = await parseCSVContent(content, hasHeaders);
+      
+      if (hasHeaders && !headers.includes(args.column)) {
+        return { error: `Column '${args.column}' not found. Available columns: ${headers.join(', ')}` };
+      }
+      
+      const filteredRows = rows.filter(row => {
+        const cellValue = String(row[args.column] || '');
+        const filterValue = args.value;
+        
+        switch (args.operator) {
+          case 'equals':
+            return cellValue === filterValue;
+          case 'contains':
+            return cellValue.includes(filterValue);
+          case 'startsWith':
+            return cellValue.startsWith(filterValue);
+          case 'endsWith':
+            return cellValue.endsWith(filterValue);
+          case 'greaterThan':
+            return parseFloat(cellValue) > parseFloat(filterValue);
+          case 'lessThan':
+            return parseFloat(cellValue) < parseFloat(filterValue);
+          default:
+            return false;
+        }
+      });
+      
+      const newContent = await writeCSVContent(headers, filteredRows, hasHeaders);
+      await fs.mkdir(path.dirname(targetSafePath), { recursive: true });
+      await fs.writeFile(targetSafePath, newContent, 'utf-8');
+      
+      return {
+        success: true,
+        message: `Filtered ${rows.length} rows to ${filteredRows.length} rows. Saved to '${args.targetPath}'`,
+        originalRows: rows.length,
+        filteredRows: filteredRows.length
+      };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+
+  sortCSV: async (args: { path: string; sortColumns: Array<{ column: string; direction: 'asc' | 'desc' }>; hasHeaders?: boolean }) => {
+    try {
+      const safePath = getSafeWorkspacePath(args.path);
+      const content = await fs.readFile(safePath, 'utf-8');
+      
+      const hasHeaders = args.hasHeaders !== false;
+      const { headers, rows } = await parseCSVContent(content, hasHeaders);
+      
+      // Validate sort columns
+      for (const sortCol of args.sortColumns) {
+        if (hasHeaders && !headers.includes(sortCol.column)) {
+          return { error: `Column '${sortCol.column}' not found. Available columns: ${headers.join(', ')}` };
+        }
+      }
+      
+      // Sort rows
+      rows.sort((a, b) => {
+        for (const sortCol of args.sortColumns) {
+          const aVal = String(a[sortCol.column] || '');
+          const bVal = String(b[sortCol.column] || '');
+          
+          // Try numeric comparison first
+          const aNum = parseFloat(aVal);
+          const bNum = parseFloat(bVal);
+          let comparison = 0;
+          
+          if (!isNaN(aNum) && !isNaN(bNum)) {
+            comparison = aNum - bNum;
+          } else {
+            comparison = aVal.localeCompare(bVal);
+          }
+          
+          if (comparison !== 0) {
+            return sortCol.direction === 'desc' ? -comparison : comparison;
+          }
+        }
+        return 0;
+      });
+      
+      const newContent = await writeCSVContent(headers, rows, hasHeaders);
+      await fs.writeFile(safePath, newContent, 'utf-8');
+      
+      return {
+        success: true,
+        message: `Sorted ${rows.length} rows by ${args.sortColumns.map(c => `${c.column} (${c.direction})`).join(', ')}`
+      };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+
+  addCSVColumn: async (args: { path: string; columnName: string; defaultValue?: string; position?: number; hasHeaders?: boolean }) => {
+    try {
+      const safePath = getSafeWorkspacePath(args.path);
+      const content = await fs.readFile(safePath, 'utf-8');
+      
+      const hasHeaders = args.hasHeaders !== false;
+      const { headers, rows } = await parseCSVContent(content, hasHeaders);
+      
+      if (headers.includes(args.columnName)) {
+        return { error: `Column '${args.columnName}' already exists.` };
+      }
+      
+      const defaultValue = args.defaultValue || '';
+      const position = args.position !== undefined ? Math.max(0, Math.min(args.position, headers.length)) : headers.length;
+      
+      // Add column to headers
+      headers.splice(position, 0, args.columnName);
+      
+      // Add default values to all rows
+      rows.forEach(row => {
+        row[args.columnName] = defaultValue;
+      });
+      
+      const newContent = await writeCSVContent(headers, rows, hasHeaders);
+      await fs.writeFile(safePath, newContent, 'utf-8');
+      
+      return {
+        success: true,
+        message: `Added column '${args.columnName}' at position ${position} with default value '${defaultValue}'`
+      };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+
+  removeCSVColumn: async (args: { path: string; column: string; hasHeaders?: boolean }) => {
+    try {
+      const safePath = getSafeWorkspacePath(args.path);
+      const content = await fs.readFile(safePath, 'utf-8');
+      
+      const hasHeaders = args.hasHeaders !== false;
+      const { headers, rows } = await parseCSVContent(content, hasHeaders);
+      
+      if (!headers.includes(args.column)) {
+        return { error: `Column '${args.column}' not found. Available columns: ${headers.join(', ')}` };
+      }
+      
+      // Remove column from headers
+      const columnIndex = headers.indexOf(args.column);
+      headers.splice(columnIndex, 1);
+      
+      // Remove column from all rows
+      rows.forEach(row => {
+        delete row[args.column];
+      });
+      
+      const newContent = await writeCSVContent(headers, rows, hasHeaders);
+      await fs.writeFile(safePath, newContent, 'utf-8');
+      
+      return {
+        success: true,
+        message: `Removed column '${args.column}'. File now has ${headers.length} columns.`
+      };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  },
+
+  aggregateCSV: async (args: { sourcePath: string; targetPath: string; groupByColumns?: string[]; aggregations: Array<{ column: string; operation: string; alias?: string }>; hasHeaders?: boolean }) => {
+    try {
+      const sourceSafePath = getSafeWorkspacePath(args.sourcePath);
+      const targetSafePath = getSafeWorkspacePath(args.targetPath);
+      const content = await fs.readFile(sourceSafePath, 'utf-8');
+      
+      const hasHeaders = args.hasHeaders !== false;
+      const { headers, rows } = await parseCSVContent(content, hasHeaders);
+      
+      // Validate columns
+      const allColumns = (args.groupByColumns || []).concat(args.aggregations.map(a => a.column));
+      for (const col of allColumns) {
+        if (hasHeaders && !headers.includes(col)) {
+          return { error: `Column '${col}' not found. Available columns: ${headers.join(', ')}` };
+        }
+      }
+      
+      // Group rows
+      const groups: Record<string, CSVRow[]> = {};
+      const groupByColumns = args.groupByColumns || [];
+      
+      if (groupByColumns.length === 0) {
+        // No grouping, aggregate all rows
+        groups['all'] = rows;
+      } else {
+        rows.forEach(row => {
+          const groupKey = groupByColumns.map(col => String(row[col] || '')).join('|');
+          if (!groups[groupKey]) groups[groupKey] = [];
+          groups[groupKey].push(row);
+        });
+      }
+      
+      // Perform aggregations
+      const resultRows: CSVRow[] = [];
+      const resultHeaders = [...groupByColumns];
+      
+      // Add aggregation columns to headers
+      args.aggregations.forEach(agg => {
+        const columnName = agg.alias || `${agg.operation}_${agg.column}`;
+        resultHeaders.push(columnName);
+      });
+      
+      for (const [groupKey, groupRows] of Object.entries(groups)) {
+        const resultRow: CSVRow = {};
+        
+        // Add group by values
+        if (groupByColumns.length > 0) {
+          const groupValues = groupKey.split('|');
+          groupByColumns.forEach((col, index) => {
+            resultRow[col] = groupValues[index];
+          });
+        }
+        
+        // Calculate aggregations
+        args.aggregations.forEach(agg => {
+          const columnName = agg.alias || `${agg.operation}_${agg.column}`;
+          const values = groupRows.map(row => parseFloat(String(row[agg.column] || '0'))).filter(v => !isNaN(v));
+          
+          switch (agg.operation) {
+            case 'sum':
+              resultRow[columnName] = values.reduce((sum, val) => sum + val, 0);
+              break;
+            case 'count':
+              resultRow[columnName] = groupRows.length;
+              break;
+            case 'average':
+              resultRow[columnName] = values.length > 0 ? values.reduce((sum, val) => sum + val, 0) / values.length : 0;
+              break;
+            case 'min':
+              resultRow[columnName] = values.length > 0 ? Math.min(...values) : 0;
+              break;
+            case 'max':
+              resultRow[columnName] = values.length > 0 ? Math.max(...values) : 0;
+              break;
+          }
+        });
+        
+        resultRows.push(resultRow);
+      }
+      
+      const newContent = await writeCSVContent(resultHeaders, resultRows, hasHeaders);
+      await fs.mkdir(path.dirname(targetSafePath), { recursive: true });
+      await fs.writeFile(targetSafePath, newContent, 'utf-8');
+      
+      return {
+        success: true,
+        message: `Aggregated ${rows.length} rows into ${resultRows.length} groups. Saved to '${args.targetPath}'`,
+        originalRows: rows.length,
+        aggregatedRows: resultRows.length,
+        operations: args.aggregations.map(a => `${a.operation}(${a.column})`)
+      };
+    } catch (error: any) {
+      return { error: error.message };
+    }
   }
 };
 
@@ -907,7 +1561,17 @@ Key Instructions:
 9.  **Continuity:** If a task requires multiple steps/turns, continue until it's complete or the user directs otherwise. You don't need to ask for permission to continue an already assigned multi-step task unless you encounter an issue or ambiguity.
 10. **List files/folders:** Use 'listFiles' tool to inspect directory contents. Default is to list both files and folders in the workspace root.
 11. **Error Handling:** If a tool call returns an error, inform the user about the error and suggest potential reasons or next steps. Do not attempt the same failed operation repeatedly without modification or clarification.
-12. **Fetch Website Content:** Use the 'fetchWebsiteContent' tool to retrieve raw content (e.g., HTML, text) from public websites. Provide a full URL (e.g., "https://example.com"). The content might be truncated if it's very long. You will receive the raw data (like HTML source code); you may need to describe how to extract specific information from it or summarize it based on the user's request. This tool CANNOT access local network resources or private IP addresses. Only public HTTP/HTTPS URLs are allowed.
+12. **CSV Data Manipulation:**
+    *   Use 'parseCSV' to analyze CSV structure and preview data before other operations.
+    *   Use 'updateCSVCell' for single cell updates by row index and column name/index.
+    *   Use 'addCSVRow'/'removeCSVRow' for row-level operations.
+    *   Use 'addCSVColumn'/'removeCSVColumn' for column-level operations.
+    *   Use 'filterCSV' to create filtered subsets (saves to new file).
+    *   Use 'sortCSV' to sort by one or multiple columns with direction.
+    *   Use 'aggregateCSV' for grouping and calculations (sum, count, avg, min, max).
+    *   Always specify 'hasHeaders' parameter correctly (defaults to true).
+    *   Column references can be by name (if headers exist) or zero-based index.
+13. **Fetch Website Content:** Use the 'fetchWebsiteContent' tool to retrieve raw content (e.g., HTML, text) from public websites. Provide a full URL (e.g., "https://example.com"). The content might be truncated if it's very long. You will receive the raw data (like HTML source code); you may need to describe how to extract specific information from it or summarize it based on the user's request. This tool CANNOT access local network resources or private IP addresses. Only public HTTP/HTTPS URLs are allowed.
 `
     }
   ];
