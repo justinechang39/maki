@@ -78,7 +78,7 @@ const ThreadManager: React.FC<{
     <Box flexDirection="column" padding={1}>
       <Text bold>Thread: {thread.title || 'Untitled'}</Text>
       <Text dimColor>{thread.messageCount} messages • Created {thread.createdAt.toLocaleDateString()}</Text>
-      <Box marginTop={1}>
+      <Box marginTop={1} flexDirection="column">
         {options.map((option, index) => (
           <Box key={index}>
             <Text color={index === selectedIndex ? 'blue' : 'white'}>
