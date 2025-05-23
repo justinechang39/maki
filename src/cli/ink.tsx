@@ -223,9 +223,6 @@ const App: React.FC<AppProps> = () => {
   const handleDeleteThread = useCallback(async () => {
     if (!selectedThread || isDeletingThread) return;
     
-    console.log('🚀 Attempting to delete thread:', selectedThread);
-    console.log('🔍 Thread ID type:', typeof selectedThread.id, 'Value:', selectedThread.id);
-    
     setIsDeletingThread(true);
     
     try {

@@ -16,14 +16,33 @@
     "prepublishOnly": "npm run build",
     "publish-npm": "npm run build && npm publish"
   },
-  "author": "",
+  "author": "Justine Chang <justinechang39@gmail.com>",
   "license": "ISC",
-  "description": "OpenRouter Agent for file operations",
+  "description": "AI-powered CLI agent for file operations, CSV manipulation, todo management, and web content fetching using OpenRouter",
+  "keywords": [
+    "cli",
+    "ai",
+    "openrouter",
+    "agent",
+    "files",
+    "csv",
+    "todo",
+    "automation"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinechang39/openrouter_agent.git"
+  },
+  "homepage": "https://github.com/justinechang39/openrouter_agent#readme",
+  "bugs": {
+    "url": "https://github.com/justinechang39/openrouter_agent/issues"
+  },
   "dependencies": {
     "@inkjs/ui": "^2.0.0",
     "@openrouter/ai-sdk-provider": "^0.4.5",
     "@prisma/client": "^6.8.2",
     "chalk": "^4.1.2",
+    "dotenv": "^16.5.0",
     "fast-csv": "^5.0.2",
     "ink": "^5.2.1",
     "inquirer": "^9.3.7",
@@ -31,6 +50,7 @@
     "react": "^18.3.1"
   },
   "devDependencies": {
+    "@types/dotenv": "^6.1.1",
     "@types/inquirer": "^9.0.7",
     "@types/node": "^20.17.47",
     "@types/react": "^18.3.22",

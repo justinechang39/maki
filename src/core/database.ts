@@ -95,16 +95,12 @@ export class ThreadDatabase {
       orderBy: { updatedAt: 'desc' }
     })
     
-    console.log('📋 Raw threads from database:', threads.map(t => ({ id: t.id, title: t.title })))
-    
     const result = threads.map((thread: any) => ({
       id: thread.id,
       title: thread.title || undefined,
       createdAt: thread.createdAt,
       messageCount: thread._count.messages
     }))
-    
-    console.log('📋 Processed threads for UI:', result.map(t => ({ id: t.id, title: t.title })))
     
     return result
   }
@@ -169,16 +165,13 @@ export class ThreadDatabase {
 
   static async deleteThread(threadId: string): Promise<void> {
     await initializeDatabase()
-    console.log('🗑️ Attempting to delete thread with ID:', threadId)
     
     try {
       // Delete messages first (foreign key constraint)
       await prisma.$executeRawUnsafe(`DELETE FROM messages WHERE threadId = ?`, threadId)
       
       // Delete thread
-      const result = await prisma.$executeRawUnsafe(`DELETE FROM threads WHERE id = ?`, threadId)
-      
-      console.log('✅ Thread deleted successfully')
+      await prisma.$executeRawUnsafe(`DELETE FROM threads WHERE id = ?`, threadId)
     } catch (error: any) {
       console.error('❌ Failed to delete thread:', error)
       throw error

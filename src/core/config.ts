@@ -1,6 +1,10 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import os from 'os';
+import dotenv from 'dotenv';
+
+// Load .env file for local development
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

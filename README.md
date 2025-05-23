@@ -12,22 +12,35 @@ A command-line AI agent built with OpenRouter that can perform file operations, 
 - **Thread Management**: Save and manage conversation history
 - **Global Installation**: Install once and use from any directory
 
-## Installation
+## Quick Start
 
-### Using npx (Recommended)
+### 1. Get your OpenRouter API key
+Sign up at [openrouter.ai](https://openrouter.ai) and get your API key.
 
-Run without installing (always gets latest version):
+### 2. Set your API key
 ```bash
 export OPENROUTER_API_KEY="your-api-key-here"
+```
+
+### 3. Run the agent
+```bash
+npx openrouter-agent
+```
+
+That's it! No installation required.
+
+## Installation Options
+
+### Using npx (Recommended)
+Run without installing (always gets latest version):
+```bash
 npx openrouter-agent
 ```
 
 ### Global Install
-
 Install once and use anywhere:
 ```bash
 npm install -g openrouter-agent
-export OPENROUTER_API_KEY="your-api-key-here"
 openrouter-agent
 ```
 
