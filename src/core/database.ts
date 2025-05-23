@@ -1,6 +1,60 @@
 import { PrismaClient } from '@prisma/client'
+import { CONFIG_DIRECTORY, DATABASE_PATH } from './config.js'
+import fs from 'fs'
+
+// Ensure config directory exists
+if (!fs.existsSync(CONFIG_DIRECTORY)) {
+  fs.mkdirSync(CONFIG_DIRECTORY, { recursive: true })
+}
+
+// Set DATABASE_URL for Prisma
+process.env.DATABASE_URL = `file:${DATABASE_PATH}`;
 
 export const prisma = new PrismaClient()
+
+// Track if database is initialized
+let databaseInitialized = false
+
+// Initialize database schema if it doesn't exist
+async function initializeDatabase() {
+  if (databaseInitialized) return
+  
+  try {
+    // Try to create tables first
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "threads" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "title" TEXT,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+    
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "messages" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "threadId" TEXT NOT NULL,
+        "role" TEXT NOT NULL CHECK ("role" IN ('USER', 'ASSISTANT', 'SYSTEM', 'TOOL')),
+        "content" TEXT NOT NULL,
+        "toolCalls" TEXT,
+        "toolResponses" TEXT,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY ("threadId") REFERENCES "threads" ("id") ON DELETE CASCADE
+      );
+    `)
+    
+    databaseInitialized = true
+    console.log('Database initialized successfully!')
+  } catch (error: any) {
+    console.error('Failed to initialize database:', error)
+    throw error
+  }
+}
+
+// Simple ID generation function
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2, 9)
+}
 
 export interface StoredMessage {
   id: string
@@ -21,15 +75,17 @@ export interface StoredThread {
 
 export class ThreadDatabase {
   static async createThread(title?: string): Promise<string> {
-    const thread = await prisma.thread.create({
-      data: {
-        title,
-      },
-    })
-    return thread.id
+    await initializeDatabase()
+    const id = generateId()
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO threads (id, title, createdAt, updatedAt) 
+      VALUES (?, ?, datetime('now'), datetime('now'))
+    `, id, title || null)
+    return id
   }
 
   static async getAllThreads(): Promise<Array<{ id: string; title?: string; createdAt: Date; messageCount: number }>> {
+    await initializeDatabase()
     const threads = await prisma.thread.findMany({
       include: {
         _count: {
@@ -54,6 +110,7 @@ export class ThreadDatabase {
   }
 
   static async getThread(threadId: string): Promise<StoredThread | null> {
+    await initializeDatabase()
     const thread = await prisma.thread.findUnique({
       where: { id: threadId },
       include: {
@@ -88,47 +145,42 @@ export class ThreadDatabase {
     toolCalls?: any[],
     toolResponses?: any[]
   ): Promise<void> {
-    await prisma.message.create({
-      data: {
-        threadId,
-        role,
-        content,
-        toolCalls: toolCalls ? JSON.stringify(toolCalls) : undefined,
-        toolResponses: toolResponses ? JSON.stringify(toolResponses) : undefined,
-      },
-    })
+    await initializeDatabase()
+    const id = generateId()
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO messages (id, threadId, role, content, toolCalls, toolResponses, createdAt) 
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    `, id, threadId, role, content, 
+       toolCalls ? JSON.stringify(toolCalls) : null,
+       toolResponses ? JSON.stringify(toolResponses) : null)
 
     // Update thread's updatedAt timestamp
-    await prisma.thread.update({
-      where: { id: threadId },
-      data: { updatedAt: new Date() }
-    })
+    await prisma.$executeRawUnsafe(`
+      UPDATE threads SET updatedAt = datetime('now') WHERE id = ?
+    `, threadId)
   }
 
   static async updateThreadTitle(threadId: string, title: string): Promise<void> {
-    await prisma.thread.update({
-      where: { id: threadId },
-      data: { title }
-    })
+    await initializeDatabase()
+    await prisma.$executeRawUnsafe(`
+      UPDATE threads SET title = ?, updatedAt = datetime('now') WHERE id = ?
+    `, title, threadId)
   }
 
   static async deleteThread(threadId: string): Promise<void> {
+    await initializeDatabase()
     console.log('🗑️ Attempting to delete thread with ID:', threadId)
     
     try {
-      const result = await prisma.thread.delete({
-        where: { id: threadId }
-      })
+      // Delete messages first (foreign key constraint)
+      await prisma.$executeRawUnsafe(`DELETE FROM messages WHERE threadId = ?`, threadId)
       
-      console.log('✅ Thread deleted successfully:', result.id)
+      // Delete thread
+      const result = await prisma.$executeRawUnsafe(`DELETE FROM threads WHERE id = ?`, threadId)
+      
+      console.log('✅ Thread deleted successfully')
     } catch (error: any) {
-      // If the thread doesn't exist, that's fine - it's already deleted
-      if (error.code === 'P2025') {
-        console.log('⚠️ Thread was already deleted or does not exist')
-        return
-      }
-      
-      // Re-throw other errors
+      console.error('❌ Failed to delete thread:', error)
       throw error
     }
   }

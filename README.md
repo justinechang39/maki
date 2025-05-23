@@ -1,66 +1,175 @@
-# OpenRouter File Assistant CLI
+# OpenRouter Agent CLI
 
-An interactive CLI agent that allows you to perform file operations using natural language commands through OpenRouter's LLM API.
+A command-line AI agent built with OpenRouter that can perform file operations, CSV manipulation, todo management, and web content fetching through a conversational interface.
 
 ## Features
 
-- Simple, chat-style interface built with Inquirer.js
-- File operations via natural language instructions
-- Supports reading, writing, updating, and deleting files
-- Multi-step reasoning through LLM function calling
-
-## Prerequisites
-
-- Node.js (v16 or newer)
-- An OpenRouter API key
+- **File Operations**: Read, write, create, delete, copy, and move files and directories
+- **CSV Data Tools**: Parse, filter, sort, merge, analyze, and export CSV data
+- **Todo Management**: Create, view, update, and manage todo lists with priorities
+- **Web Content Fetching**: Download and extract content from web pages
+- **Conversational Interface**: Natural language interaction with the AI agent
+- **Thread Management**: Save and manage conversation history
+- **Global Installation**: Install once and use from any directory
 
 ## Installation
 
-```bash
-# Clone the repository
-git clone <repository-url>
-cd openrouter_agent
+### Using npx (Recommended)
 
-# Install dependencies
-npm install
+Run without installing (always gets latest version):
+```bash
+export OPENROUTER_API_KEY="your-api-key-here"
+npx openrouter-agent
 ```
 
-## Setup
+### Global Install
 
-Set your OpenRouter API key as an environment variable:
-
+Install once and use anywhere:
 ```bash
-export OPENROUTER_API_KEY=your_api_key
+npm install -g openrouter-agent
+export OPENROUTER_API_KEY="your-api-key-here"
+openrouter-agent
 ```
+
+### Development/Local Install
+
+For development or local testing:
+
+1. Clone the repository
+2. Set your OpenRouter API key:
+   ```bash
+   export OPENROUTER_API_KEY="your-api-key-here"
+   ```
+3. Install globally from source:
+   ```bash
+   npm run install-global
+   ```
+4. Use from any directory:
+   ```bash
+   cd ~/Documents
+   openrouter-agent
+   ```
+
+**Note**: Once published to npm, users can use `npx openrouter-agent` or `npm install -g openrouter-agent`.
+
+## Development Setup
+
+1. Clone the repository
+2. Install dependencies: `npm install`
+3. Set your OpenRouter API key:
+   ```bash
+   export OPENROUTER_API_KEY="your-api-key-here"
+   ```
+4. Run database setup: `npx prisma migrate dev`
 
 ## Usage
 
-Start the application in development mode:
+### Global Usage (After Global Install)
+```bash
+cd /any/directory
+openrouter-agent
+```
 
+The agent will operate on files in your current working directory and store its database in `~/.config/openrouter-agent/`.
+
+### Development Mode
 ```bash
 npm run dev
 ```
 
-Build and run the application:
-
+### Production Mode
 ```bash
 npm run build
 npm start
 ```
 
-## Example Commands
+## Commands
 
-Here are some example commands you can try:
+- `npm run dev` - Start development interface
+- `npm run build` - Build TypeScript to JavaScript
+- `npm start` - Run built version
+- `npm run install-global` - Build and install globally
+- `npm run migrate` - Run database migrations
 
-- "Create a file named hello.txt with content 'Hello, World!'"
-- "Read the contents of hello.txt"
-- "Append 'This is a new line.' to hello.txt"
-- "Delete the file hello.txt"
-- "Create a new file todo.txt with a list of tasks"
+## Configuration
 
-## Security Considerations
+### Global Installation
+- Database: `~/.config/openrouter-agent/database.sqlite`
+- Working directory: Current directory where you run `openrouter-agent`
 
-The application includes basic path sanitization to prevent directory traversal, but it's recommended to use this tool in a controlled environment.
+### Development Mode
+- Database: `./prisma/database.sqlite`
+- Working directory: `./file_assistant_workspace`
+
+## Available Tools
+
+### File Tools
+- `listFiles` - List files and directories
+- `readFile` - Read file contents
+- `writeFile` - Create or update files
+- `appendToFile` - Append content to files
+- `deleteFile` - Delete files
+- `createFolder` - Create directories
+- `deleteFolder` - Delete directories
+- `renameFolder` - Rename directories
+- `renameFile` - Rename files
+- `copyFile` - Copy files
+- `copyFolder` - Copy directories
+
+### CSV Tools
+- `loadCSV` - Load and display CSV data
+- `filterCSV` - Filter CSV rows by criteria
+- `sortCSV` - Sort CSV data by columns
+- `analyzeCSV` - Analyze CSV structure and data
+- `mergeCSV` - Merge multiple CSV files
+- `exportCSV` - Export data to CSV format
+- `groupByCSV` - Group CSV data by column values
+- `transformCSV` - Transform CSV column data
+
+### Todo Tools
+- `getTodos` - View current todo list
+- `addTodo` - Add new todo items
+- `updateTodo` - Update existing todos
+- `deleteTodo` - Delete todos
+- `clearTodos` - Clear all todos
+
+### Web Tools
+- `fetchWebContent` - Download and extract web page content
+
+## Publishing to npm
+
+To publish this package so users can use `npx openrouter-agent`:
+
+1. **Create npm account**: Sign up at [npmjs.com](https://npmjs.com)
+
+2. **Login to npm**:
+   ```bash
+   npm login
+   ```
+
+3. **Update version** (if needed):
+   ```bash
+   npm version patch  # or minor/major
+   ```
+
+4. **Build and publish**:
+   ```bash
+   npm run build
+   npm publish
+   ```
+
+5. **Users can then run**:
+   ```bash
+   npx openrouter-agent
+   ```
+
+### Pre-publish Checklist
+
+- [ ] Update version in package.json
+- [ ] Ensure package name is unique on npm
+- [ ] Test locally with `npm run install-global`
+- [ ] Update README with actual npm package name
+- [ ] Remove hardcoded API keys from code
 
 ## License
 

@@ -10,6 +10,8 @@ import { tools, toolImplementations } from '../tools/index.js';
 import type { Message, DisplayMessage, ToolCall } from '../core/types.js';
 import { ThreadDatabase } from '../core/database.js';
 import { SYSTEM_PROMPT } from '../core/system-prompt.js';
+import { DATABASE_PATH, OPENROUTER_API_KEY } from '../core/config.js';
+import fs from 'fs';
 
 interface AppProps {}
 
@@ -116,6 +118,13 @@ const App: React.FC<AppProps> = () => {
   useEffect(() => {
     const loadThreads = async () => {
       try {
+        // Check if database exists, if not, create it with migration
+        if (!fs.existsSync(DATABASE_PATH)) {
+          console.log('Setting up database for first time...');
+          // For global installation, we need to create tables manually since we can't run migrations
+          // The database will be created automatically when Prisma connects
+        }
+        
         const threadList = await ThreadDatabase.getAllThreads();
         setThreads(threadList);
         setIsLoadingThreads(false);
@@ -579,10 +588,30 @@ const App: React.FC<AppProps> = () => {
 };
 
 export function startInkInterface(): void {
-  render(<App />);
+  console.log('🚀 Starting OpenRouter Agent...');
+  
+  // Check for API key before starting
+  if (!OPENROUTER_API_KEY) {
+    console.error('❌ Error: OPENROUTER_API_KEY environment variable is required.');
+    console.error('');
+    console.error('Please set your OpenRouter API key:');
+    console.error('  export OPENROUTER_API_KEY="your-api-key-here"');
+    console.error('');
+    console.error('Or add it to your shell profile (~/.bashrc, ~/.zshrc, etc.):');
+    console.error('  echo \'export OPENROUTER_API_KEY="your-api-key-here"\' >> ~/.zshrc');
+    process.exit(1);
+  }
+
+  console.log('✅ API key found');
+  console.log('🚀 Starting Ink interface...');
+  
+  try {
+    render(<App />);
+  } catch (error) {
+    console.error('❌ Error starting interface:', error);
+    process.exit(1);
+  }
 }
 
-// Run if this file is executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  startInkInterface();
-}
+// Always run when this file is executed
+startInkInterface();
