@@ -99,9 +99,7 @@ const ThreadManager: React.FC<{
 
 const App: React.FC<AppProps> = () => {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
-  const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [inputMode, setInputMode] = useState<'chat' | 'navigate'>('chat');
   const [inputKey, setInputKey] = useState(0);
   const [conversationHistory, setConversationHistory] = useState<Message[]>([]);
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
@@ -134,17 +132,7 @@ const App: React.FC<AppProps> = () => {
     return messages.slice(-availableMessageHeight);
   }, [messages, availableMessageHeight]);
 
-  // Debounced message update to prevent rapid flickering
-  const debouncedSetMessages = useCallback((updateFn: (prev: DisplayMessage[]) => DisplayMessage[]) => {
-    if (updateTimeoutRef.current) {
-      clearTimeout(updateTimeoutRef.current);
-    }
-    
-    updateTimeoutRef.current = setTimeout(() => {
-      setMessages(updateFn);
-      updateTimeoutRef.current = null;
-    }, 50); // 50ms debounce
-  }, []);
+  // Note: Debounced updates removed as they're not needed with current message flow
 
   // Format tool results for better display
   const formatToolResult = useCallback((toolName: string, args: any, result: any): string => {
@@ -468,7 +456,7 @@ const App: React.FC<AppProps> = () => {
     }
   }, [formatToolResult]);
 
-  const processAssistantResponse = useCallback(async (response: any, depth: number = 0): Promise<Message[]> => {
+  const processAssistantResponse = useCallback(async (response: any, currentHistory: Message[], depth: number = 0): Promise<Message[]> => {
     // Prevent infinite recursion
     if (depth > 3) {
       console.warn('Maximum recursion depth reached for tool calls');
@@ -537,15 +525,15 @@ const App: React.FC<AppProps> = () => {
 
       // Get follow-up response from assistant after tool execution (with recursion limit)
       if (depth < 3) {
-        const updatedHistory = [...conversationHistory, ...newMessages];
+        const updatedHistory = [...currentHistory, ...newMessages];
         const followUpResponse = await callOpenRouterAPI(updatedHistory, tools);
-        const followUpMessages = await processAssistantResponse(followUpResponse, depth + 1);
+        const followUpMessages = await processAssistantResponse(followUpResponse, updatedHistory, depth + 1);
         newMessages.push(...followUpMessages);
       }
     }
 
     return newMessages;
-  }, [conversationHistory, executeToolCall, currentThreadId]);
+  }, [executeToolCall, currentThreadId]);
 
   const handleSubmit = useCallback(async (userInput: string) => {
     if (!userInput.trim() || isProcessing) return;
@@ -589,13 +577,13 @@ const App: React.FC<AppProps> = () => {
         ? cleanHistory.slice(-MAX_CONVERSATION_LENGTH)
         : cleanHistory;
 
-      setConversationHistory(limitedHistory);
-
       // Call OpenRouter API
       const response = await callOpenRouterAPI(limitedHistory, tools);
-      const responseMessages = await processAssistantResponse(response);
+      const responseMessages = await processAssistantResponse(response, limitedHistory);
       
-      setConversationHistory(prev => [...prev, ...responseMessages]);
+      // Update conversation history with both the limited history and new responses
+      const finalHistory = [...limitedHistory, ...responseMessages];
+      setConversationHistory(finalHistory);
 
     } catch (error: any) {
       setMessages(prev => [...prev, {
@@ -723,8 +711,10 @@ const App: React.FC<AppProps> = () => {
           const actualIndex = messages.length > availableMessageHeight 
             ? messages.length - availableMessageHeight + index 
             : index;
+          // Create stable key using index and content hash
+          const contentHash = msg.content ? msg.content.length + msg.content.slice(-10) : 'empty';
           return (
-            <Box key={`msg-${actualIndex}-${msg.content?.substring(0, 20) || ''}`} 
+            <Box key={`msg-${actualIndex}-${msg.role}-${contentHash}`} 
                  marginBottom={msg.isToolResult ? 1 : 0} 
                  padding={msg.isToolResult ? 1 : 0}>
               {msg.isToolResult ? (
@@ -760,7 +750,6 @@ const App: React.FC<AppProps> = () => {
               handleSubmit(value);
               setInputKey(prev => prev + 1); // Force re-render to clear input
             }}
-            onChange={setInputText}
           />
         </Box>
       </Box>
