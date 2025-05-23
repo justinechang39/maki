@@ -28,11 +28,13 @@ const ThreadSelector: React.FC<{
   onSelect: (threadId: string | 'new') => void;
 }> = ({ threads, selectedIndex, onSelect }) => {
   const items = [
-    { name: '🆕 Start a new thread', value: 'new' },
+    { name: 'Start a new thread', value: 'new', isNew: true } as const,
     ...threads.map(thread => ({
-      name: `📝 ${thread.title || 'Untitled'} (${thread.messageCount} messages) - ${thread.createdAt.toLocaleDateString()}`,
-      value: thread.id
-    }))
+      name: `${thread.title || 'Untitled'}`,
+      value: thread.id,
+      subtitle: `${thread.messageCount} messages • ${thread.createdAt.toLocaleDateString()}`,
+      isNew: false
+    } as const))
   ];
 
   useInput((input, key) => {
@@ -43,15 +45,30 @@ const ThreadSelector: React.FC<{
 
   return (
     <Box flexDirection="column" padding={1}>
-      <Text bold>Select a thread:</Text>
-      {items.map((item, index) => (
-        <Box key={index}>
-          <Text color={index === selectedIndex ? 'blue' : 'white'}>
-            {index === selectedIndex ? '> ' : '  '}{item.name}
-          </Text>
-        </Box>
-      ))}
-      <Text dimColor>Press Enter to select, use ↑↓ to navigate</Text>
+      <Box paddingBottom={1}>
+        <Text bold color="cyan">▌threads</Text>
+      </Box>
+      
+      <Box flexDirection="column">
+        {items.map((item, index) => (
+          <Box key={index}>
+            <Text color={index === selectedIndex ? 'blue' : 'white'} 
+                  backgroundColor={index === selectedIndex ? 'blue' : undefined}
+                  inverse={index === selectedIndex}>
+              {index === selectedIndex ? '▶' : ' '} {item.isNew ? '+' : '•'} {item.name}
+            </Text>
+            {!item.isNew && 'subtitle' in item && item.subtitle && (
+              <Box paddingLeft={2}>
+                <Text dimColor>{item.subtitle}</Text>
+              </Box>
+            )}
+          </Box>
+        ))}
+      </Box>
+      
+      <Box paddingTop={1}>
+        <Text dimColor>↑↓ • ⏎ • ^C</Text>
+      </Box>
     </Box>
   );
 };
@@ -65,9 +82,9 @@ const ThreadManager: React.FC<{
   isDeleting?: boolean;
 }> = ({ thread, selectedIndex, onContinue, onDelete, onBack, isDeleting = false }) => {
   const options = [
-    { name: '▶️  Continue thread', action: onContinue },
-    { name: '🗑️  Delete thread', action: onDelete },
-    { name: '← Back to thread list', action: onBack }
+    { name: 'Continue conversation', icon: '▶️', action: onContinue, color: 'green' },
+    { name: 'Delete thread', icon: '🗑️', action: onDelete, color: 'red' },
+    { name: 'Back to list', icon: '⬅️', action: onBack, color: 'gray' }
   ];
 
   useInput((input, key) => {
@@ -78,20 +95,26 @@ const ThreadManager: React.FC<{
 
   return (
     <Box flexDirection="column" padding={1}>
-      <Text bold>Thread: {thread.title || 'Untitled'}</Text>
-      <Text dimColor>{thread.messageCount} messages • Created {thread.createdAt.toLocaleDateString()}</Text>
-      <Box marginTop={1} flexDirection="column">
+      <Box paddingBottom={1}>
+        <Text bold color="yellow">▌{thread.title || 'untitled'}</Text>
+        <Text dimColor>{thread.messageCount} msgs • {thread.createdAt.toLocaleDateString()}</Text>
+      </Box>
+      
+      <Box flexDirection="column">
         {options.map((option, index) => (
           <Box key={index}>
-            <Text color={index === selectedIndex ? 'blue' : 'white'}>
-              {index === selectedIndex ? '> ' : '  '}{option.name}
-              {index === 1 && isDeleting ? ' (Deleting...)' : ''}
+            <Text color={index === selectedIndex ? option.color : 'white'} 
+                  backgroundColor={index === selectedIndex ? option.color : undefined}
+                  inverse={index === selectedIndex}>
+              {index === selectedIndex ? '▶' : ' '} {option.icon} {option.name}
+              {index === 1 && isDeleting ? ' ⏳' : ''}
             </Text>
           </Box>
         ))}
       </Box>
-      <Box marginTop={1}>
-        <Text dimColor>Press Enter to select, use ↑↓ to navigate</Text>
+      
+      <Box paddingTop={1}>
+        <Text dimColor>↑↓ • ⏎ • ^C</Text>
       </Box>
     </Box>
   );
@@ -594,7 +617,7 @@ const App: React.FC<AppProps> = () => {
         setSelectedThreadIndex(prev => Math.min(threads.length, prev + 1));
       } else if (key.return) {
         const items = [
-          { name: '🆕 Start a new thread', value: 'new' },
+          { name: 'Start a new thread', value: 'new' },
           ...threads.map(thread => ({ name: '', value: thread.id }))
         ];
         handleThreadSelect(items[selectedThreadIndex].value);
@@ -622,12 +645,8 @@ const App: React.FC<AppProps> = () => {
 
   const formatMessage = useCallback((msg: DisplayMessage) => {
     if (msg.isToolResult) {
-      // Use StatusMessage for tool results
-      const isSuccess = msg.content?.includes('✅');
       const isError = msg.content?.includes('❌');
-      const isWarning = msg.content?.includes('⚠️');
-      
-      const variant = isError ? 'error' : isWarning ? 'warning' : isSuccess ? 'success' : 'info';
+      const variant = isError ? 'error' : 'info';
       
       return (
         <StatusMessage variant={variant}>
@@ -636,22 +655,43 @@ const App: React.FC<AppProps> = () => {
       );
     }
     
-    // For regular messages, use the existing format
-    const prefix = msg.role === 'user' ? '👤' : 
-                  msg.role === 'assistant' ? '🤖' : 
-                  msg.isThinking ? '💭' : '⚙️';
+    if (msg.isThinking) {
+      return (
+        <Box>
+          <Text color="magenta">💭 {msg.content}</Text>
+        </Box>
+      );
+    }
     
-    const color = msg.role === 'user' ? 'blue' :
-                 msg.role === 'assistant' ? 'green' :
-                 msg.isThinking ? 'magenta' : 'gray';
+    const isUser = msg.role === 'user';
+    const isAssistant = msg.role === 'assistant';
     
-    return `${prefix} ${chalk[color](msg.content || '')}`;
+    if (isUser) {
+      return (
+        <Box>
+          <Text color="blue">▌{msg.content}</Text>
+        </Box>
+      );
+    }
+    
+    if (isAssistant) {
+      return (
+        <Box>
+          <Text color="green">▌{msg.content}</Text>
+        </Box>
+      );
+    }
+    
+    return `⚙️ ${chalk.gray(msg.content || '')}`;
   }, []);
 
   if (isLoadingThreads) {
     return (
       <Box flexDirection="column" height="100%" justifyContent="center" alignItems="center">
-        <Spinner label=" Loading threads..." />
+        <Box flexDirection="column" alignItems="center">
+          <Text bold color="cyan">▌OpenRouter Agent</Text>
+          <Spinner label=" Loading..." />
+        </Box>
       </Box>
     );
   }
@@ -659,8 +699,8 @@ const App: React.FC<AppProps> = () => {
   if (isSelectingThread) {
     return (
       <Box flexDirection="column" height="100%">
-        <Box borderStyle="round" borderColor="gray" padding={1} marginBottom={1}>
-          <Text bold>OpenRouter Agent CLI (Ink Interface)</Text>
+        <Box paddingY={1}>
+          <Text bold color="cyan">▌OpenRouter Agent</Text>
         </Box>
         
         <ThreadSelector 
@@ -675,8 +715,8 @@ const App: React.FC<AppProps> = () => {
   if (isManagingThread && selectedThread) {
     return (
       <Box flexDirection="column" height="100%">
-        <Box borderStyle="round" borderColor="gray" padding={1} marginBottom={1}>
-          <Text bold>OpenRouter Agent CLI (Ink Interface)</Text>
+        <Box paddingY={1}>
+          <Text bold color="cyan">▌OpenRouter Agent</Text>
         </Box>
         
         <ThreadManager
@@ -692,47 +732,44 @@ const App: React.FC<AppProps> = () => {
   }
 
   return (
-    <Box flexDirection="column">
-      <Box borderStyle="round" borderColor="gray" padding={1} marginBottom={1}>
-        <Text bold>OpenRouter Agent CLI (Ink Interface)</Text>
+    <Box flexDirection="column" height="100%">
+      <Box paddingY={1}>
+        <Text bold color="cyan">▌OpenRouter Agent</Text>
       </Box>
       
-      <Box flexDirection="column" marginBottom={1} padding={1}>
-        {visibleMessages.map((msg, index) => {
-          // Create stable key using index and content hash
-          const contentHash = msg.content ? msg.content.length + msg.content.slice(-10) : 'empty';
-          return (
-            <Box key={`msg-${index}-${msg.role}-${contentHash}`} 
-                 marginBottom={msg.isToolResult ? 1 : 0} 
-                 padding={msg.isToolResult ? 1 : 0}>
-              {msg.isToolResult ? (
-                formatMessage(msg)
-              ) : (
-                <Text wrap="wrap">{formatMessage(msg)}</Text>
-              )}
+      <Box flexDirection="column" flexGrow={1} marginBottom={1}>
+        <Box flexDirection="column">
+          {visibleMessages.map((msg, index) => {
+            const contentHash = msg.content ? msg.content.length + msg.content.slice(-10) : 'empty';
+            return (
+              <Box key={`msg-${index}-${msg.role}-${contentHash}`}>
+                {formatMessage(msg)}
+              </Box>
+            );
+          })}
+          
+          {isProcessing && (
+            <Box>
+              <Text color="yellow">▌thinking...</Text>
             </Box>
-          );
-        })}
-        
-        {isProcessing && (
-          <Box>
-            <Spinner label=" Processing..." />
-          </Box>
-        )}
+          )}
+        </Box>
       </Box>
       
-      <Box borderStyle="single" borderColor="blue" padding={1}>
-        <Box flexDirection="column" gap={1}>
-          <Text dimColor>💬 Type your message (Enter to send, Ctrl+C to exit)</Text>
+      <Box paddingY={1}>
+        <Box borderStyle="single" borderColor={isProcessing ? 'yellow' : 'blue'} paddingX={1}>
           <TextInput
             key={inputKey}
-            placeholder="Ask me anything..."
+            placeholder={isProcessing ? "processing..." : "ask me anything..."}
             isDisabled={isProcessing}
             onSubmit={(value) => {
               handleSubmit(value);
-              setInputKey(prev => prev + 1); // Force re-render to clear input
+              setInputKey(prev => prev + 1);
             }}
           />
+        </Box>
+        <Box paddingTop={1}>
+          <Text dimColor>⏎ send • ^C exit</Text>
         </Box>
       </Box>
     </Box>
