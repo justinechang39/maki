@@ -6,17 +6,17 @@ export const webTools: Tool[] = [
     type: 'function',
     function: {
       name: 'fetchWebsiteContent',
-      description: 'Fetches the raw text content (primarily HTML or plain text) from a given public URL. Use this to get information from websites. The response will be a string of the page\'s content, which might be HTML code. Content may be truncated if too long (default 10,000 characters). This tool cannot access local files or internal/private network resources.',
+      description: 'EXTERNAL DATA RETRIEVAL: Fetch content from public websites for research, analysis, or data collection. Returns raw HTML/text content that you can parse and extract information from. Use for gathering external data, checking APIs, or retrieving reference materials. Cannot access private/internal networks.',
       parameters: {
         type: 'object',
         properties: {
           url: {
             type: 'string',
-            description: 'The public HTTP or HTTPS URL to fetch content from (e.g., "https://www.example.com"). Must be a fully qualified URL.'
+            description: 'Public HTTP/HTTPS URL to fetch (e.g., "https://api.example.com/data", "https://docs.example.com"). Must be fully qualified URL starting with http:// or https://'
           },
           maxLength: {
             type: 'number',
-            description: 'Optional. Maximum number of characters to return from the beginning of the content. Defaults to 10000. Min 100, Max 50000.'
+            description: 'Content length limit in characters. Default: 10,000. Range: 100-50,000. Larger values for complete documents, smaller for quick checks.'
           }
         },
         required: ['url']

@@ -9,12 +9,12 @@ export const csvTools: Tool[] = [
     type: 'function',
     function: {
       name: 'parseCSV',
-      description: `Parse a CSV file in the workspace ('${WORKSPACE_DIRECTORY_NAME}') and return its structure and data.`,
+      description: `DATA ANALYSIS: Inspect CSV files and understand their structure. Returns column headers, row count, data types, and preview rows. Essential first step before manipulating CSV data. Use this to understand the data before making changes.`,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `The CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
-          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers in the first row. Defaults to true.' }
+          path: { type: 'string', description: `CSV file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be an existing .csv file.` },
+          hasHeaders: { type: 'boolean', description: 'TRUE: First row contains column names (most common). FALSE: Data starts from first row. Defaults to true.' }
         },
         required: ['path']
       }
@@ -24,15 +24,15 @@ export const csvTools: Tool[] = [
     type: 'function',
     function: {
       name: 'updateCSVCell',
-      description: `Update a specific cell in a CSV file by row and column identifiers.`,
+      description: `PRECISION DATA EDITING: Modify individual cells in CSV data. Use for correcting specific values, updating single data points, or making targeted changes. Use parseCSV first to understand the structure and identify correct row/column.`,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `The CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
-          rowIndex: { type: 'number', description: 'Zero-based row index (excluding headers if present).' },
-          column: { type: 'string', description: 'Column name (if headers exist) or zero-based column index as string.' },
-          value: { type: 'string', description: 'New value for the cell.' },
-          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers. Defaults to true.' }
+          path: { type: 'string', description: `CSV file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing CSV file.` },
+          rowIndex: { type: 'number', description: 'Data row number (0-based, excluding header row). Use parseCSV preview to identify correct row.' },
+          column: { type: 'string', description: 'Column name (if headers exist) or numeric column index as string. Use exact header name from parseCSV results.' },
+          value: { type: 'string', description: 'New cell value. Will be stored as text - format appropriately for your data type.' },
+          hasHeaders: { type: 'boolean', description: 'Must match the actual file structure. Use parseCSV to confirm. Defaults to true.' }
         },
         required: ['path', 'rowIndex', 'column', 'value']
       }
@@ -42,13 +42,13 @@ export const csvTools: Tool[] = [
     type: 'function',
     function: {
       name: 'addCSVRow',
-      description: `Add a new row to a CSV file.`,
+      description: `DATA EXPANSION: Insert new records into CSV files. Use for adding new data entries, appending calculated results, or expanding datasets. Provide data as key-value pairs matching column headers.`,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `The CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
-          rowData: { type: 'object', description: 'Object with column names as keys and cell values as values.' },
-          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers. Defaults to true.' }
+          path: { type: 'string', description: `CSV file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing CSV file.` },
+          rowData: { type: 'object', description: 'Data object with column names as keys and values as strings. Keys must match existing column headers exactly.' },
+          hasHeaders: { type: 'boolean', description: 'Must match file structure. Use parseCSV to verify. Defaults to true.' }
         },
         required: ['path', 'rowData']
       }
@@ -58,13 +58,13 @@ export const csvTools: Tool[] = [
     type: 'function',
     function: {
       name: 'removeCSVRow',
-      description: `Remove a row from a CSV file by index.`,
+      description: `DATA CLEANUP: Delete specific rows from CSV files. Use for removing invalid data, duplicates, or outdated records. Use parseCSV first to identify the correct row index to remove.`,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `The CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
-          rowIndex: { type: 'number', description: 'Zero-based row index (excluding headers if present).' },
-          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers. Defaults to true.' }
+          path: { type: 'string', description: `CSV file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing CSV file.` },
+          rowIndex: { type: 'number', description: 'Row number to delete (0-based, excluding header). Use parseCSV preview to identify correct row. Cannot be undone.' },
+          hasHeaders: { type: 'boolean', description: 'Must match file structure. Use parseCSV to verify. Defaults to true.' }
         },
         required: ['path', 'rowIndex']
       }
@@ -74,16 +74,16 @@ export const csvTools: Tool[] = [
     type: 'function',
     function: {
       name: 'filterCSV',
-      description: `Filter CSV rows based on column criteria and create a new CSV file.`,
+      description: `DATA EXTRACTION: Create filtered subsets of CSV data based on criteria. Generates new CSV files containing only rows matching your conditions. Ideal for data analysis, reporting, or creating focused datasets.`,
       parameters: {
         type: 'object',
         properties: {
-          sourcePath: { type: 'string', description: `Source CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
-          targetPath: { type: 'string', description: `Target CSV file path where filtered results will be saved.` },
-          column: { type: 'string', description: 'Column name to filter by.' },
-          operator: { type: 'string', description: 'Filter operator: "equals", "contains", "startsWith", "endsWith", "greaterThan", "lessThan".', enum: ['equals', 'contains', 'startsWith', 'endsWith', 'greaterThan', 'lessThan'] },
-          value: { type: 'string', description: 'Value to compare against.' },
-          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers. Defaults to true.' }
+          sourcePath: { type: 'string', description: `Source CSV file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing CSV file.` },
+          targetPath: { type: 'string', description: `Output file path for filtered results. Will create new CSV file with matching rows and same structure.` },
+          column: { type: 'string', description: 'Column name to apply filter criteria. Use exact header name from parseCSV results.' },
+          operator: { type: 'string', description: 'Comparison operation: "equals" (exact match), "contains" (substring), "startsWith"/"endsWith" (positional), "greaterThan"/"lessThan" (numeric/alphabetic)', enum: ['equals', 'contains', 'startsWith', 'endsWith', 'greaterThan', 'lessThan'] },
+          value: { type: 'string', description: 'Comparison value. For numeric comparisons, ensure value can be parsed as number.' },
+          hasHeaders: { type: 'boolean', description: 'Must match source file structure. Defaults to true.' }
         },
         required: ['sourcePath', 'targetPath', 'column', 'operator', 'value']
       }

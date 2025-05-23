@@ -9,25 +9,25 @@ export const fileTools: Tool[] = [
     type: 'function',
     function: {
       name: 'listFiles',
-      description: `List files and/or folders in a directory within the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
+      description: `EXPLORATION TOOL: Discover and catalog workspace contents. Use this to understand project structure, find specific file types, or navigate directories. Essential for initial exploration before making changes. Shows both files and folders with detailed counts for better workspace understanding.`,
       parameters: {
         type: 'object',
         properties: {
           path: {
             type: 'string',
-            description: `The directory path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}'). Defaults to the workspace root if not specified.`
+            description: `Directory path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Leave empty or use '.' for workspace root. Use subdirectory names for deeper exploration.`
           },
           extension: {
             type: 'string',
-            description: 'Optional file extension to filter by (e.g., "txt", "js"). Do not include the dot.'
+            description: 'Filter by file extension (e.g., "txt", "js", "md"). Omit the dot. Use this to find specific file types quickly.'
           },
           includeFiles: {
             type: 'boolean',
-            description: 'Whether to include files. Defaults to true.'
+            description: 'Include files in results. Set false to see only folder structure.'
           },
           includeFolders: {
             type: 'boolean',
-            description: 'Whether to include folders. Defaults to true.'
+            description: 'Include folders in results. Set false to see only files.'
           }
         },
         required: []
@@ -38,13 +38,13 @@ export const fileTools: Tool[] = [
     type: 'function',
     function: {
       name: 'readFile',
-      description: `Read the text content of a file from the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
+      description: `CONTENT INSPECTION: Read and examine file contents. Use this to understand existing code, data, or configuration before making modifications. Essential for analyzing current state and planning changes. Returns complete file content as text.`,
       parameters: {
         type: 'object',
         properties: {
           path: {
             type: 'string',
-            description: `The file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').`
+            description: `File path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be an existing file. Use listFiles first if unsure of exact path.`
           }
         },
         required: ['path']
@@ -55,12 +55,12 @@ export const fileTools: Tool[] = [
     type: 'function',
     function: {
       name: 'writeFile',
-      description: `Write text content to a file in the workspace ('${WORKSPACE_DIRECTORY_NAME}'), creating or overwriting it.`,
+      description: `CONTENT CREATION: Create new files or completely replace existing content. Use for creating new files from scratch or when you need to rewrite an entire file. WARNING: This overwrites existing files completely. For partial edits, use updateFile instead.`,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `The file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
-          content: { type: 'string', description: 'The text content to write.' }
+          path: { type: 'string', description: `Target file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Creates parent directories automatically if needed.` },
+          content: { type: 'string', description: 'Complete file content to write. This will replace any existing content entirely.' }
         },
         required: ['path', 'content']
       }
@@ -70,19 +70,19 @@ export const fileTools: Tool[] = [
     type: 'function',
     function: {
       name: 'updateFile',
-      description: `Update specific lines in an existing file in the workspace ('${WORKSPACE_DIRECTORY_NAME}') with granular line-based operations.`,
+      description: `PRECISION EDITING: Make targeted changes to existing files without losing other content. Use for surgical edits like adding/modifying specific lines, inserting new sections, or appending content. Preferred over writeFile for preserving existing code while making specific changes.`,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `The file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
-          content: { type: 'string', description: 'The new content to insert or replace with.' },
+          path: { type: 'string', description: `Existing file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). File must already exist.` },
+          content: { type: 'string', description: 'New content to insert, replace with, or append. Can be multi-line.' },
           operation: {
             type: 'string',
-            description: 'Operation type: "replace" (replace specific lines), "insert" (insert before line), "append" (add to end), or "prepend" (add to beginning).',
+            description: 'Edit operation: "replace" (substitute specific lines), "insert" (add before specified line), "append" (add to file end), "prepend" (add to file beginning)',
             enum: ['replace', 'insert', 'append', 'prepend']
           },
-          startLine: { type: 'number', description: 'Starting line number (1-based) for replace/insert operations. Required for replace and insert operations.' },
-          endLine: { type: 'number', description: 'Ending line number (1-based, inclusive) for replace operations. If not specified for replace, only startLine is replaced.' }
+          startLine: { type: 'number', description: 'Line number (1-based) where operation begins. Required for replace/insert operations. Use readFile first to identify correct line numbers.' },
+          endLine: { type: 'number', description: 'End line number (1-based, inclusive) for replace operations. Omit to replace only startLine.' }
         },
         required: ['path', 'content', 'operation']
       }
@@ -92,11 +92,11 @@ export const fileTools: Tool[] = [
     type: 'function',
     function: {
       name: 'deleteFile',
-      description: `Delete a file from the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
+      description: `CLEANUP OPERATION: Permanently remove files from workspace. Use with caution as this cannot be undone. Ideal for removing temporary files, outdated content, or cleaning up after operations.`,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `The file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` }
+          path: { type: 'string', description: `File path to delete within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). File must exist.` }
         },
         required: ['path']
       }
@@ -106,11 +106,11 @@ export const fileTools: Tool[] = [
     type: 'function',
     function: {
       name: 'createFolder',
-      description: `Create a new folder in the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
+      description: `ORGANIZATION TOOL: Create directory structure for better file organization. Automatically creates parent directories if needed. Use to establish project structure or organize content into logical groups.`,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `The folder path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` }
+          path: { type: 'string', description: `New folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Will create parent folders if needed.` }
         },
         required: ['path']
       }
@@ -120,12 +120,12 @@ export const fileTools: Tool[] = [
     type: 'function',
     function: {
       name: 'deleteFolder',
-      description: `Delete a folder (and its contents if specified) from the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
+      description: `CLEANUP OPERATION: Remove directories from workspace. Set recursive=true to delete non-empty folders and all contents. Use with extreme caution as this permanently removes all nested content.`,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `The folder path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
-          recursive: { type: 'boolean', description: 'Set to true to delete non-empty folders. Defaults to false.' }
+          path: { type: 'string', description: `Folder path to delete within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing directory.` },
+          recursive: { type: 'boolean', description: 'TRUE: Delete folder and ALL contents (dangerous). FALSE: Only delete if empty (safer). Always consider carefully.' }
         },
         required: ['path']
       }
@@ -135,12 +135,12 @@ export const fileTools: Tool[] = [
     type: 'function',
     function: {
       name: 'renameFolder',
-      description: `Rename a folder in the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
+      description: `REORGANIZATION TOOL: Move/rename directories for better organization. Changes folder path and updates all contained file locations. Useful for restructuring project layout.`,
       parameters: {
         type: 'object',
         properties: {
-          oldPath: { type: 'string', description: `Current folder path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
-          newPath: { type: 'string', description: `New folder path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` }
+          oldPath: { type: 'string', description: `Current folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must exist.` },
+          newPath: { type: 'string', description: `New folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Will create parent folders if needed.` }
         },
         required: ['oldPath', 'newPath']
       }
@@ -150,12 +150,12 @@ export const fileTools: Tool[] = [
     type: 'function',
     function: {
       name: 'renameFile',
-      description: `Rename a file in the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
+      description: `REORGANIZATION TOOL: Move/rename files for better organization or correct naming. Can move files between directories. Updates file location while preserving content.`,
       parameters: {
         type: 'object',
         properties: {
-          oldPath: { type: 'string', description: `Current file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
-          newPath: { type: 'string', description: `New file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` }
+          oldPath: { type: 'string', description: `Current file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing file.` },
+          newPath: { type: 'string', description: `New file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Will create parent folders if needed.` }
         },
         required: ['oldPath', 'newPath']
       }

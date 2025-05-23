@@ -11,13 +11,13 @@ const thinkTool: Tool = {
   type: 'function',
   function: {
     name: 'think',
-    description: 'Use this tool to document your thinking process, plan steps, or reason about complex problems. The content is only visible to you (logged internally). Use this before undertaking complex multi-step tasks. When you use this tool, you are encouraged to use it multiple times if it helps clarify your plan for a complex task.',
+    description: 'CRITICAL PLANNING TOOL: Use this to break down complex tasks, analyze requirements, and create step-by-step execution plans. This is your internal workspace - the user cannot see your thoughts. Always use this tool before multi-step operations to ensure systematic execution. Use multiple times during complex workflows to reassess and adjust your approach.',
     parameters: {
       type: 'object',
       properties: {
         thoughts: {
           type: 'string',
-          description: 'Your detailed thinking process, reasoning, or step-by-step plan.'
+          description: 'Your detailed analysis, step-by-step plan, decision reasoning, or problem decomposition. Include what you discovered, what you plan to do next, and why.'
         }
       },
       required: ['thoughts']

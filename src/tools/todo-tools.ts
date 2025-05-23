@@ -8,7 +8,7 @@ export const todoTools: Tool[] = [
     type: 'function',
     function: {
       name: 'readTodo',
-      description: `Read the current todo list from 'todo.md' in the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
+      description: `TASK TRACKING: View current todo list and task status. Essential for understanding what work needs to be done, checking progress, and planning next steps. Shows all tasks with their current status markers.`,
       parameters: { type: 'object', properties: {}, required: [] }
     }
   },
@@ -16,11 +16,11 @@ export const todoTools: Tool[] = [
     type: 'function',
     function: {
       name: 'writeTodo',
-      description: `Create or replace 'todo.md' in the workspace ('${WORKSPACE_DIRECTORY_NAME}') with new content.`,
+      description: `TASK MANAGEMENT: Create or completely rewrite the todo list. Use for initial task planning, major reorganization, or starting fresh. WARNING: This replaces the entire todo.md file. Use updateTodoItem for individual changes.`,
       parameters: {
         type: 'object',
         properties: {
-          content: { type: 'string', description: "The new content for 'todo.md'." }
+          content: { type: 'string', description: "Complete todo list content in Markdown format. Use '- [ ]' for pending, '- [x]' for completed, '- [/]' for in-progress tasks." }
         },
         required: ['content']
       }
@@ -30,17 +30,17 @@ export const todoTools: Tool[] = [
     type: 'function',
     function: {
       name: 'updateTodoItem',
-      description: `Update a todo item in 'todo.md' in the workspace ('${WORKSPACE_DIRECTORY_NAME}').`,
+      description: `PROGRESS TRACKING: Update individual task status or description. Use this to mark tasks as completed, in-progress, or modify task descriptions. More precise than rewriting entire todo list.`,
       parameters: {
         type: 'object',
         properties: {
-          itemIndex: { type: 'number', description: 'Line number (1-based) of the todo item.' },
+          itemIndex: { type: 'number', description: 'Line number (1-based) of the task to update. Use readTodo first to see current line numbers.' },
           newStatus: {
             type: 'string',
-            description: 'New status.',
+            description: 'Task status: "pending" ([ ]), "in_progress" ([/]), "completed" ([x]), "cancelled" ([~])',
             enum: ['pending', 'in_progress', 'completed', 'cancelled']
           },
-          newText: { type: 'string', description: 'Optional new text for the todo item.' }
+          newText: { type: 'string', description: 'Optional: Update task description. Leave blank to keep current text and only change status.' }
         },
         required: ['itemIndex', 'newStatus']
       }
