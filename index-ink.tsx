@@ -1362,18 +1362,10 @@ interface StatusBarProps {
 }
 
 const StatusBar: React.FC<StatusBarProps> = ({ isProcessing, toolExecutions }) => {
-  if (!isProcessing && toolExecutions.length === 0) return null;
+  if (toolExecutions.length === 0) return null;
   
   return (
     <Box borderStyle="single" borderColor="yellow" paddingX={2} paddingY={0} marginBottom={1}>
-      {isProcessing && (
-        <Box flexDirection="row" alignItems="center">
-          <Box marginRight={1}>
-            <Spinner type="dots" />
-          </Box>
-          <Text color="cyan">Processing your request...</Text>
-        </Box>
-      )}
       {toolExecutions.map((tool, index) => (
         <ToolExecution key={`tool-${index}`} toolName={tool.toolName} toolId={tool.toolId} />
       ))}
@@ -1772,30 +1764,39 @@ Key Instructions:
         }
 
         workingMessages.push(assistantMessage);
+        // Update UI immediately when assistant message with tool calls arrives
+        setMessages([...workingMessages]);
 
         if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
           const toolResponses: Message[] = [];
 
           for (const toolCall of assistantMessage.tool_calls) {
             if (toolCall.type !== 'function') {
-              toolResponses.push({
-                role: 'tool',
+              const errorResponse = {
+                role: 'tool' as const,
                 tool_call_id: toolCall.id,
                 name: 'unknown_tool_type',
                 content: JSON.stringify({ error: `Unsupported tool call type: ${toolCall.type}` })
-              });
+              };
+              toolResponses.push(errorResponse);
+              workingMessages.push(errorResponse);
+              // Update UI after each tool response
+              setMessages([...workingMessages]);
               continue;
             }
 
             const result = await handleToolExecution(toolCall);
-            toolResponses.push({
-              role: 'tool',
+            const toolResponse = {
+              role: 'tool' as const,
               tool_call_id: toolCall.id,
               name: toolCall.function.name,
               content: JSON.stringify(result)
-            });
+            };
+            toolResponses.push(toolResponse);
+            workingMessages.push(toolResponse);
+            // Update UI after each tool response
+            setMessages([...workingMessages]);
           }
-          workingMessages.push(...toolResponses);
         } else {
           return workingMessages;
         }
@@ -1804,6 +1805,7 @@ Key Instructions:
           role: 'assistant',
           content: `An error occurred: ${error.message}. The user might need to rephrase or simplify the request.`
         });
+        setMessages([...workingMessages]);
         return workingMessages;
       }
     }
@@ -1856,8 +1858,7 @@ Key Instructions:
         }
     }
 
-    const updatedMessages = await agentLoop(newMessages);
-    setMessages(updatedMessages);
+    await agentLoop(newMessages);
     setIsProcessing(false);
   }, [messages, agentLoop, exit]);
 
