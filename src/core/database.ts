@@ -80,7 +80,7 @@ async function applyMigration() {
       CREATE TABLE "messages" (
         "id" TEXT NOT NULL PRIMARY KEY,
         "threadId" TEXT NOT NULL,
-        "role" TEXT NOT NULL,
+        "role" TEXT NOT NULL CHECK ("role" IN ('USER', 'ASSISTANT', 'SYSTEM', 'TOOL')),
         "content" TEXT NOT NULL,
         "toolCalls" TEXT,
         "toolResponses" TEXT,
