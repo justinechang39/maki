@@ -1,10 +1,10 @@
 {
-  "name": "openrouter-agent",
+  "name": "maki",
   "version": "1.0.0",
   "main": "index.js",
   "type": "module",
   "bin": {
-    "openrouter-agent": "./dist/cli/ink.js"
+    "maki": "./dist/cli/ink.js"
   },
   "files": [
     "dist/",
@@ -42,11 +42,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/justinechang39/openrouter_agent.git"
+    "url": "https://github.com/justinechang39/maki.git"
   },
-  "homepage": "https://github.com/justinechang39/openrouter_agent#readme",
+  "homepage": "https://github.com/justinechang39/maki#readme",
   "bugs": {
-    "url": "https://github.com/justinechang39/openrouter_agent/issues"
+    "url": "https://github.com/justinechang39/maki/issues"
   },
   "dependencies": {
     "@inkjs/ui": "^2.0.0",

@@ -1,4 +1,4 @@
-# OpenRouter Agent CLI
+# Maki CLI
 
 A command-line AI agent built with OpenRouter that can perform file operations, CSV manipulation, todo management, and web content fetching through a conversational interface.
 
@@ -24,7 +24,7 @@ export OPENROUTER_API_KEY="your-api-key-here"
 
 ### 3. Run the agent
 ```bash
-npx openrouter-agent
+npx maki
 ```
 
 That's it! No installation required.
@@ -34,14 +34,14 @@ That's it! No installation required.
 ### Using npx (Recommended)
 Run without installing (always gets latest version):
 ```bash
-npx openrouter-agent
+npx maki
 ```
 
 ### Global Install
 Install once and use anywhere:
 ```bash
-npm install -g openrouter-agent
-openrouter-agent
+npm install -g maki
+maki
 ```
 
 ### Development/Local Install
@@ -60,10 +60,10 @@ For development or local testing:
 4. Use from any directory:
    ```bash
    cd ~/Documents
-   openrouter-agent
+   maki
    ```
 
-**Note**: Once published to npm, users can use `npx openrouter-agent` or `npm install -g openrouter-agent`.
+**Note**: Once published to npm, users can use `npx maki` or `npm install -g maki`.
 
 ## Development Setup
 
@@ -80,10 +80,10 @@ For development or local testing:
 ### Global Usage (After Global Install)
 ```bash
 cd /any/directory
-openrouter-agent
+maki
 ```
 
-The agent will operate on files in your current working directory and store its database in `~/.config/openrouter-agent/`.
+The agent will operate on files in your current working directory and store its database in `~/.config/maki/`.
 
 ### Development Mode
 ```bash
@@ -107,8 +107,8 @@ npm start
 ## Configuration
 
 ### Global Installation
-- Database: `~/.config/openrouter-agent/database.sqlite`
-- Working directory: Current directory where you run `openrouter-agent`
+- Database: `~/.config/maki/database.sqlite`
+- Working directory: Current directory where you run `maki`
 
 ### Development Mode
 - Database: `./prisma/database.sqlite`
@@ -151,7 +151,7 @@ npm start
 
 ## Publishing to npm
 
-To publish this package so users can use `npx openrouter-agent`:
+To publish this package so users can use `npx maki`:
 
 1. **Create npm account**: Sign up at [npmjs.com](https://npmjs.com)
 
@@ -173,7 +173,7 @@ To publish this package so users can use `npx openrouter-agent`:
 
 5. **Users can then run**:
    ```bash
-   npx openrouter-agent
+   npx maki
    ```
 
 ### Pre-publish Checklist
