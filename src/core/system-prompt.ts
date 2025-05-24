@@ -48,6 +48,9 @@ When given a task you can break it down into smaller steps, use the appropriate 
 **TODO & WEB TOOLS:**
 - readTodo, writeTodo, updateTodoItem: Task list management
 - fetchWebsiteContent: Retrieve and process external web content
+- downloadFile: Download files from URLs with progress tracking to workspace
+- checkUrlStatus: Validate URLs and get metadata without downloading content
+- extractLinksFromPage: Extract and categorize links from webpages for analysis
 
 ## OPERATIONAL GUIDELINES
 

@@ -230,6 +230,29 @@ const App: React.FC<AppProps> = () => {
         const title = result.title ? `\nTitle: ${result.title}` : '';
         return `Fetched ${args.url} (${sizeDesc3})${title}`;
       
+      case 'downloadFile':
+        if (result.success) {
+          return `📥 Downloaded ${result.filename} (${result.sizeFormatted}) to ${result.filePath}`;
+        }
+        return `❌ Download failed: ${result.error || 'Unknown error'}`;
+      
+      case 'checkUrlStatus':
+        if (result.success) {
+          const status = result.accessible ? '✅ Accessible' : '❌ Not accessible';
+          return `${status} - ${args.url} (${result.statusCode} ${result.statusText})\nContent-Type: ${result.contentType}\nSize: ${result.contentLength}`;
+        }
+        return `❌ URL check failed: ${result.error || 'Unknown error'}`;
+      
+      case 'extractLinksFromPage':
+        if (result.success) {
+          const linkCount = result.totalFound || 0;
+          const summary = Object.entries(result.links || {}).map(([type, links]: [string, any]) => 
+            `${type}: ${Array.isArray(links) ? links.length : 0}`
+          ).join(', ');
+          return `🔗 Found ${linkCount} links on ${args.url}\n${summary}`;
+        }
+        return `❌ Link extraction failed: ${result.error || 'Unknown error'}`;
+      
       default:
         // Generic success message with result preview
         if (result.success || result.message) {

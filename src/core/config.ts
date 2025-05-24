@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 // --- Configuration ---
 export const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 export const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-export const MODEL_ID = 'openai/gpt-4.1';
+export const MODEL_ID = 'google/gemini-2.5-flash-preview-05-20:thinking';
 
 // Use system config directory for database and workspace operates in current directory
 export const CONFIG_DIRECTORY = path.join(os.homedir(), '.config', 'openrouter-agent');
