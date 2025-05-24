@@ -531,7 +531,11 @@ const App: React.FC<AppProps> = () => {
 
     const choice = response.choices?.[0];
     if (!choice) {
-      throw new Error('No response choice from API');
+      throw new Error('The AI model did not provide a response. Please try your request again.');
+    }
+
+    if (!choice.message) {
+      throw new Error('The AI model returned an incomplete response. Please try again.');
     }
 
     const message = choice.message;
@@ -861,7 +865,7 @@ const App: React.FC<AppProps> = () => {
       </Box>
       
       <Box paddingY={1}>
-        <Box borderStyle="single" borderColor={isProcessing ? 'yellow' : 'blue'} paddingX={1}>
+        <Box width="100%" borderStyle="single" borderColor={isProcessing ? 'yellow' : 'blue'} paddingX={1}>
           <TextInput
             key={inputKey}
             placeholder={isProcessing ? "processing..." : "ask me anything..."}
