@@ -11,7 +11,7 @@ const thinkTool: Tool = {
   type: 'function',
   function: {
     name: 'think',
-    description: 'CRITICAL PLANNING TOOL: Use this to break down complex tasks, analyze requirements, and create step-by-step execution plans. This is your internal workspace - the user cannot see your thoughts. Always use this tool before multi-step operations to ensure systematic execution. Use multiple times during complex workflows to reassess and adjust your approach.',
+    description: 'CRITICAL REASONING TOOL: Use this to reason through any situation, plan operations, work through ambiguities, and make informed decisions. This is your private internal workspace - the user cannot see your thoughts. Use this tool whenever you need to reason: before tasks, during execution, to reassess progress, and ALWAYS to double-check your work before presenting results. This should be your most frequently used tool. Use it to ask yourself: Did you do it right? Are you done? Is there anything else that needs to be done?',
     parameters: {
       type: 'object',
       properties: {
