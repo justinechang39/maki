@@ -1,5 +1,7 @@
 # Maki CLI
 
+⚠️ **DISCLAIMER**: This is an AI-powered tool that can perform file operations and system commands. The author is NOT responsible for any data loss, system damage, or other issues that may arise from using this software. Use at your own risk and always backup important data before running AI agents with file system access.
+
 A command-line AI agent built with OpenRouter that can perform file operations, CSV manipulation, todo management, and web content fetching through a conversational interface.
 
 ## Features
