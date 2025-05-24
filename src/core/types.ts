@@ -14,6 +14,8 @@ export interface DisplayMessage extends Message {
   isThinking?: boolean;
   isProcessing?: boolean;
   isToolResult?: boolean;
+  isToolExecution?: boolean;
+  toolName?: string;
 }
 
 export interface ToolCall {

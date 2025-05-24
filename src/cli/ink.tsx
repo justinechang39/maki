@@ -461,18 +461,33 @@ const App: React.FC<AppProps> = () => {
       return { error: `Unknown tool: ${name}` };
     }
 
+    // Choose a random spinner type for this tool execution
+    const spinnerTypes = ['dots', 'dots2', 'circle', 'binary', 'bounce', 'pulse', 'arc', 'betaWave', 'aesthetic', 'mindblown', 'timeTravel', 'orangePulse'];
+    const randomSpinner = spinnerTypes[Math.floor(Math.random() * spinnerTypes.length)];
+
     try {
+      // Show tool execution with spinner
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: name === 'think' ? args.thoughts : `${name}`,
+        isToolExecution: true,
+        toolName: name,
+        isProcessing: true
+      } as DisplayMessage]);
+
       const result = await implementation(args);
       
-      // Single update with result - no intermediate "executing" message to prevent flicker
+      // Update with result
       setMessages(prev => {
         const newMessages = [...prev];
+        // Remove the executing message
+        newMessages.pop();
         
         // Special display for 'think' tool
         if (name === 'think') {
           newMessages.push({
             role: 'assistant',
-            content: `💭 ${args.thoughts}`,
+            content: args.thoughts,
             isThinking: true
           } as DisplayMessage);
         } else {
@@ -491,11 +506,18 @@ const App: React.FC<AppProps> = () => {
       
       return result;
     } catch (error: any) {
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `❌ ${name} failed: ${error.message}`,
-        isProcessing: false
-      } as DisplayMessage]);
+      // Remove executing message and add error
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages.pop(); // Remove executing message
+        newMessages.push({
+          role: 'assistant',
+          content: `❌ ${name} failed: ${error.message}`,
+          isProcessing: false,
+          isToolResult: true
+        } as DisplayMessage);
+        return newMessages;
+      });
       return { error: error.message };
     }
   }, [formatToolResult]);
@@ -676,19 +698,61 @@ const App: React.FC<AppProps> = () => {
   const formatMessage = useCallback((msg: DisplayMessage) => {
     if (msg.isToolResult) {
       const isError = msg.content?.includes('❌');
-      const variant = isError ? 'error' : 'info';
+      const isSuccess = msg.content?.includes('✅') || (!isError && msg.content);
+      const borderColor = isError ? 'red' : isSuccess ? 'green' : 'blue';
+      const iconColor = isError ? 'red' : isSuccess ? 'green' : 'blue';
+      const icon = isError ? '❌' : isSuccess ? '✅' : '⚙️';
       
       return (
-        <StatusMessage variant={variant}>
-          {msg.content?.replace(/^[✅❌⚠️]\s*/, '') || ''}
-        </StatusMessage>
+        <Box width="100%" paddingX={2} paddingY={1} borderStyle="round" borderColor={borderColor}>
+          <Box flexDirection="column">
+            <Box marginBottom={1}>
+              <Text color={iconColor} bold>{icon} tool result</Text>
+            </Box>
+            <Text color={iconColor} wrap="wrap">{msg.content?.replace(/^[✅❌⚠️]\s*/, '') || ''}</Text>
+          </Box>
+        </Box>
+      );
+    }
+    
+    if (msg.isToolExecution) {
+      const spinnerTypes = ['dots', 'dots2', 'circle', 'binary', 'bounce', 'arc', 'betaWave', 'aesthetic', 'mindblown', 'timeTravel', 'orangePulse', 'bluePulse'];
+      const randomSpinner = spinnerTypes[Math.floor(Math.random() * spinnerTypes.length)] as any;
+      
+      if (msg.toolName === 'think') {
+        return (
+          <Box width="100%" paddingX={2} paddingY={1} borderStyle="round" borderColor="magenta">
+            <Box>
+              <Box marginRight={1}>
+                <Spinner type={randomSpinner} />
+              </Box>
+              <Text color="magenta" italic bold>thinking: {msg.content}</Text>
+            </Box>
+          </Box>
+        );
+      }
+      
+      return (
+        <Box width="100%" paddingX={2} paddingY={1} borderStyle="round" borderColor="cyan">
+          <Box>
+            <Box marginRight={1}>
+              <Spinner type={randomSpinner} />
+            </Box>
+            <Text color="cyan" bold>executing {msg.toolName}...</Text>
+          </Box>
+        </Box>
       );
     }
     
     if (msg.isThinking) {
       return (
-        <Box>
-          <Text color="magenta">💭 {msg.content}</Text>
+        <Box width="100%" paddingX={2} paddingY={1} borderStyle="round" borderColor="magenta">
+          <Box flexDirection="column">
+            <Box marginBottom={1}>
+              <Text color="magenta" bold>💭 thinking</Text>
+            </Box>
+            <Text color="magenta" italic wrap="wrap">{msg.content}</Text>
+          </Box>
         </Box>
       );
     }
@@ -720,7 +784,7 @@ const App: React.FC<AppProps> = () => {
       <Box flexDirection="column" height="100%" justifyContent="center" alignItems="center">
         <Box flexDirection="column" alignItems="center">
           <Text bold color="cyan">▌OpenRouter Agent</Text>
-          <Spinner label=" Loading..." />
+          <Spinner label=" Loading..." type="binary"/>
         </Box>
       </Box>
     );
@@ -778,11 +842,21 @@ const App: React.FC<AppProps> = () => {
             );
           })}
           
-          {isProcessing && (
-            <Box>
-              <Text color="yellow">▌thinking...</Text>
-            </Box>
-          )}
+          {isProcessing && (() => {
+            const spinnerTypes = ['dots', 'dots2', 'circle', 'binary', 'bounce', 'arc', 'betaWave', 'aesthetic', 'mindblown', 'timeTravel', 'orangePulse', 'bluePulse'];
+            const randomSpinner = spinnerTypes[Math.floor(Math.random() * spinnerTypes.length)] as any;
+            
+            return (
+              <Box width="100%" paddingX={2} paddingY={1} borderStyle="round" borderColor="yellow">
+                <Box>
+                  <Box marginRight={1}>
+                    <Spinner type={randomSpinner} />
+                  </Box>
+                  <Text color="yellow" bold>processing your request...</Text>
+                </Box>
+              </Box>
+            );
+          })()}
         </Box>
       </Box>
       
