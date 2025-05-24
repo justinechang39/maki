@@ -44,3 +44,8 @@ logs
 # Cache
 .npm
 .eslintcache
+
+# Database files
+data/
+*.sqlite
+*.sqlite-journal

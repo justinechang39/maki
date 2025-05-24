@@ -135,6 +135,7 @@ const App: React.FC<AppProps> = () => {
   const [isLoadingThreads, setIsLoadingThreads] = useState(true);
   const [isDeletingThread, setIsDeletingThread] = useState(false);
   const isCreatingThread = useRef(false);
+  const isDeletingThreadRef = useRef(false);
   const { exit } = useApp();
   const { stdout } = useStdout();
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -379,11 +380,14 @@ const App: React.FC<AppProps> = () => {
   }, [selectedThread]);
 
   const handleDeleteThread = useCallback(async () => {
-    if (!selectedThread || isDeletingThread) return;
+    if (!selectedThread || isDeletingThreadRef.current) return;
     
+    // Use ref to prevent race conditions
+    isDeletingThreadRef.current = true;
     setIsDeletingThread(true);
     
     try {
+      console.log('Starting thread deletion for:', selectedThread.id);
       await ThreadDatabase.deleteThread(selectedThread.id);
       
       // Refresh thread list
@@ -395,12 +399,15 @@ const App: React.FC<AppProps> = () => {
       setIsSelectingThread(true);
       setSelectedThread(null);
       setSelectedThreadIndex(0);
+      
+      console.log('Thread deletion completed successfully');
     } catch (error) {
       console.error('Failed to delete thread:', error);
     } finally {
+      isDeletingThreadRef.current = false;
       setIsDeletingThread(false);
     }
-  }, [selectedThread, isDeletingThread]);
+  }, [selectedThread]);
 
   const handleBackToThreadList = useCallback(() => {
     setIsManagingThread(false);

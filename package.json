@@ -6,14 +6,25 @@
   "bin": {
     "openrouter-agent": "./dist/cli/ink.js"
   },
+  "files": [
+    "dist/",
+    "prisma/",
+    "README.md",
+    "AGENT.md"
+  ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
     "start": "node dist/cli/ink.js",
-    "dev": "npx tsx src/cli/ink.tsx",
+    "dev": "NODE_ENV=development npx tsx src/cli/ink.tsx",
     "install-global": "npm run build && npm install -g .",
-    "migrate": "prisma migrate dev",
-    "prepublishOnly": "npm run build",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "db:reset": "prisma migrate reset --force",
+    "postinstall": "prisma generate",
+    "prepublishOnly": "npm run db:generate && npm run build",
     "publish-npm": "npm run build && npm publish"
   },
   "author": "Justine Chang <justinechang39@gmail.com>",
