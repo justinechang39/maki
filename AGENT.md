@@ -47,24 +47,35 @@ export OPENROUTER_API_KEY="your-api-key-here"
 
 ### File Finding Best Practices
 
-**For finding files in subdirectories:**
-- Use `findFiles` for powerful recursive search with patterns and specific file types
-- Use `listFiles` only for immediate directory listing (non-recursive)
+**Use the unified `glob` tool for all file discovery:**
+- Powerful glob patterns: `*`, `**`, `?`, `[]`, `{}`
+- Default limit: 100 results to prevent context overflow
+- Returns simple file paths by default (strings)
 
 **For finding images:**
 ```javascript
 // Good - finds PNG files recursively
-findFiles({ searchType: "files", path: "folder/path", fileType: "png" })
+glob("**/*.png", { cwd: "folder/path" })
 
-// Good - finds all files matching a pattern
-findFiles({ searchType: "files", pattern: ".*\\.(png|jpg|jpeg|gif)$" })
+// Good - finds multiple image types
+glob("**/*.{png,jpg,jpeg,gif}")
 
-// Bad - won't find images in subdirectories
-listFiles({ path: "folder/path", extension: "png" })
+// Good - with reasonable limits
+glob("**/*.jpg", { maxResults: 50 })
 ```
 
+**Output options (use wisely to avoid context overflow):**
+- Default: Returns simple file paths (strings) - most efficient
+- `sizeOnly: true` - Returns path and file size only (good for filtering by size)
+- `objectMode: true` - Returns objects with metadata (use sparingly)
+- `stats: true` - Includes full file metadata (most verbose, use only when needed)
+
+**For finding large images:**
+1. Use `glob` with `sizeOnly`: `glob("**/*.{png,jpg,jpeg}", { sizeOnly: true, maxResults: 50 })`
+2. Filter results by size in your code logic
+
 **For copying multiple images:**
-1. Use `findFiles` with `fileType` to discover image files (run once per format: png, jpg, etc.)
+1. Use `glob` to discover image files: `glob("**/*.{png,jpg,jpeg}", { maxResults: 50 })`
 2. Use `createFolder` to create destination folder
 3. Use `copyFile` in a loop for each image found
 

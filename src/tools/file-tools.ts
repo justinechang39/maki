@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
 import path from 'path';
-import { spawn } from 'child_process';
+import fg from 'fast-glob';
 import { WORKSPACE_DIRECTORY_NAME } from '../core/config.js'; // Assuming these exist
 import { getSafeWorkspacePath } from '../core/utils.js';   // Assuming these exist
 import type { Tool } from '../core/types.js';             // Assuming these exist
@@ -17,21 +17,76 @@ export const fileTools: Tool[] = [
   {
     type: 'function',
     function: {
-      name: 'listFiles',
-      description: `FILE DISCOVERY: List only files within a specified directory (non-recursive). Perfect for exploring immediate file contents. For recursive searching or advanced filtering across subdirectories, use findFiles instead.`,
+      name: 'glob',
+      description: `POWERFUL FILE & DIRECTORY DISCOVERY: Fast, unified tool for finding files and directories using glob patterns. Supports all common patterns (*, **, ?, [], {}) and advanced filtering. This replaces listFiles, listFolders, and findFiles with a simpler, more powerful interface.`,
       parameters: {
         type: 'object',
         properties: {
-          path: {
+          pattern: {
             type: 'string',
-            description: `Directory path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Leave empty or use '.' for workspace root. Shows only files in this directory.`
+            description: `Glob pattern to search for. Examples: "*" (all items in directory), "**/*.js" (all JS files recursively), "src/**" (everything in src), "*.{jpg,png}" (images), "!node_modules/**" (exclude node_modules). Use forward slashes on all platforms.`
           },
-          extension: {
-            type: 'string',
-            description: 'Filter by file extension (e.g., "txt", "js", "md"). Omit the dot. For multiple extensions or recursive search, use findFiles.'
+          options: {
+            type: 'object',
+            description: 'Search configuration options',
+            properties: {
+              onlyFiles: {
+                type: 'boolean',
+                description: 'Return only files (default: true). Set false to include both files and directories.'
+              },
+              onlyDirectories: {
+                type: 'boolean', 
+                description: 'Return only directories (default: false). Overrides onlyFiles if true.'
+              },
+              cwd: {
+                type: 'string',
+                description: `Working directory for search (relative to '${WORKSPACE_DIRECTORY_NAME}'). Default: workspace root.`
+              },
+              deep: {
+                type: 'number',
+                description: 'Maximum search depth. Default: unlimited. Use 1 for immediate children only.'
+              },
+              dot: {
+                type: 'boolean',
+                description: 'Include hidden files/directories (starting with .). Default: false.'
+              },
+              absolute: {
+                type: 'boolean',
+                description: 'Return absolute file paths. Default: false (returns workspace-relative paths).'
+              },
+              objectMode: {
+                type: 'boolean',
+                description: 'Return rich objects with metadata instead of just path strings. Default: false. WARNING: Use sparingly as this creates verbose output.'
+              },
+              stats: {
+                type: 'boolean',
+                description: 'Include fs.Stats in results (slower but provides size, dates, etc.). Default: false. WARNING: Creates very verbose output, use only when file metadata is specifically needed.'
+              },
+              ignore: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Array of glob patterns to exclude from results. Example: ["node_modules/**", "*.log"]'
+              },
+              caseSensitive: {
+                type: 'boolean',
+                description: 'Case-sensitive pattern matching. Default: true.'
+              },
+              maxResults: {
+                type: 'number',
+                description: 'Maximum number of results to return. Default: 100 to prevent context overflow. Set higher only when needed.'
+              },
+              markDirectories: {
+                type: 'boolean',
+                description: 'Add trailing slash to directory paths for easy identification. Default: false.'
+              },
+              sizeOnly: {
+                type: 'boolean',
+                description: 'Return only path and size for files (much cleaner than full stats). Useful for filtering by file size. Default: false.'
+              }
+            }
           }
         },
-        required: []
+        required: ['pattern']
       }
     }
   },
@@ -45,7 +100,7 @@ export const fileTools: Tool[] = [
         properties: {
           path: {
             type: 'string',
-            description: `File path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be an existing file. Use listFiles or findFiles first if unsure of exact path.`
+            description: `File path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be an existing file. Use glob first if unsure of exact path.`
           }
         },
         required: ['path']
@@ -229,23 +284,6 @@ export const fileTools: Tool[] = [
   {
     type: 'function',
     function: {
-      name: 'listFolders',
-      description: `FOLDER NAVIGATION: List only directories/folders within a specified path (non-recursive). Perfect for understanding folder structure and navigating between directories. Use this when you specifically need to see the directory structure without files cluttering the view. For recursive search, use findFiles.`,
-      parameters: {
-        type: 'object',
-        properties: {
-          path: {
-            type: 'string',
-            description: `Directory path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Leave empty or use '.' for workspace root. Shows only subdirectories in this directory.`
-          }
-        },
-        required: []
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
       name: 'getCurrentDirectory',
       description: `WORKSPACE AWARENESS: Get information about the main workspace directory configuration. Essential for understanding the project's root context. Note: This provides information about the defined workspace, not the OS current working directory.`,
       parameters: {
@@ -254,89 +292,147 @@ export const fileTools: Tool[] = [
         required: []
       }
     }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'findFiles',
-      description: `POWERFUL RECURSIVE SEARCH TOOL: Fast file and folder discovery using ripgrep. Use this to find files/folders by name patterns, search file contents, or locate specific code patterns. Perfect for code navigation and discovery tasks. Use "both" or "all" for searchType to be efficient.`,
-      parameters: {
-        type: 'object',
-        properties: {
-          pattern: {
-            type: 'string',
-            description: `Search term. For filenames/foldernames: use simple text (e.g., "user", "service", which becomes *user*/*service*) or glob patterns (e.g., "*.ts", "api/v?"). For content: search for exact text or regex patterns. If omitted when 'fileTypes' are specified (for 'files' or 'folders' searchType), it defaults to finding all items of those types (like pattern: "*").`
-          },
-          searchType: {
-            type: 'string',
-            enum: ['files', 'content', 'folders', 'both', 'all'],
-            description: 'Specify search target: "files" (names only), "content" (inside files), "folders" (names only). Use "both" (files & content) or "all" (files, content, & folders) for comprehensive searches to reduce multiple calls. Default: "files".'
-          },
-          path: {
-            type: 'string',
-            description: `Directory to search within (relative to '${WORKSPACE_DIRECTORY_NAME}'). Defaults to workspace root. Searches recursively through subdirectories.`
-          },
-          fileTypes: {
-            type: 'string',
-            description: 'Filter by file extensions (e.g., "js,ts,md", "png,jpg"). Omit the dot. Comma-separated for multiple. Leave empty for all types. For common image types, use: "png,jpg,jpeg,gif,webp,svg,bmp,tiff".'
-          },
-          ignoreCase: {
-            type: 'boolean',
-            description: 'Whether to ignore case sensitivity in search. Default: true for broader matches.'
-          },
-          maxResults: {
-            type: 'number',
-            description: 'Maximum number of results to return. Default: 50. Use smaller numbers for focused searches.'
-          },
-          includeHidden: {
-            type: 'boolean',
-            description: 'Whether to include hidden files/directories (starting with .). Default: false.'
-          }
-        },
-        required: [] // Pattern OR fileTypes are effectively required, validated in implementation.
-      }
-    }
   }
 ];
 
 export const fileToolImplementations: Record<string, (args: any) => Promise<any>> = {
-  listFiles: async (args: { path?: string; extension?: string }) => {
+  glob: async (args: { 
+    pattern: string; 
+    options?: {
+      onlyFiles?: boolean;
+      onlyDirectories?: boolean;
+      cwd?: string;
+      deep?: number;
+      dot?: boolean;
+      absolute?: boolean;
+      objectMode?: boolean;
+      stats?: boolean;
+      ignore?: string[];
+      caseSensitive?: boolean;
+      maxResults?: number;
+      markDirectories?: boolean;
+      sizeOnly?: boolean;
+    }
+  }) => {
     try {
-      const dirPath = getSafeWorkspacePath(args.path || '.');
-      let files: string[] = [];
+      const opts = args.options || {};
+      const workspacePath = getSafeWorkspacePath();
+      const searchPath = opts.cwd ? getSafeWorkspacePath(opts.cwd) : workspacePath;
 
-      const entries = await fs.readdir(dirPath, { withFileTypes: true });
-      files = entries.filter(e => e.isFile()).map(e => e.name);
+      // Configure fast-glob options with better defaults
+      const fgOptions: fg.Options = {
+        cwd: searchPath,
+        onlyFiles: opts.onlyDirectories ? false : (opts.onlyFiles !== false),
+        onlyDirectories: opts.onlyDirectories || false,
+        deep: opts.deep,
+        dot: opts.dot || false,
+        absolute: opts.absolute || false,
+        objectMode: opts.objectMode || opts.stats || opts.sizeOnly || false, // Enable objectMode if stats/sizes are requested
+        stats: opts.stats || opts.sizeOnly || false, // Enable stats if sizeOnly is requested
+        ignore: opts.ignore || [],
+        caseSensitiveMatch: opts.caseSensitive !== false,
+        markDirectories: opts.markDirectories || false,
+        unique: true,
+        suppressErrors: true
+      };
 
-      if (args.extension) {
-        const ext = args.extension.startsWith('.') ? args.extension : `.${args.extension}`;
-        files = files.filter(f => f.endsWith(ext));
+      // Set reasonable default max results to prevent context overflow
+      const defaultMaxResults = opts.maxResults || 100;
+
+      // Execute the glob search
+      let results: string[] | fg.Entry[] | any[] = await fg(args.pattern, fgOptions);
+
+      // Limit results to prevent context overflow
+      if (results.length > defaultMaxResults) {
+        results = results.slice(0, defaultMaxResults);
       }
 
-      const relativePathToCurrentDir = path.relative(getSafeWorkspacePath(), dirPath) || '.';
-      const isRoot = relativePathToCurrentDir === '.';
-      const parentDirRelativePath = !isRoot ? path.dirname(relativePathToCurrentDir) : null;
+      // Process results and clean up if needed
+      if (fgOptions.objectMode) {
+        // Entry objects from fast-glob when objectMode is enabled
+        results = (results as unknown as fg.Entry[]).map(entry => {
+          // Clean up the dirent object to remove function references that can't be serialized
+          const cleanDirent = entry.dirent ? {
+            name: entry.dirent.name,
+            isFile: entry.dirent.isFile(),
+            isDirectory: entry.dirent.isDirectory(),
+            isSymbolicLink: entry.dirent.isSymbolicLink()
+          } : undefined;
+
+          const finalPath = opts.absolute 
+            ? path.resolve(searchPath, entry.path)
+            : path.relative(workspacePath, path.resolve(searchPath, entry.path));
+
+          // Handle sizeOnly mode for cleaner output
+          if (opts.sizeOnly && entry.stats) {
+            return {
+              path: finalPath,
+              size: entry.stats.size,
+              sizeFormatted: formatBytes(entry.stats.size)
+            };
+          }
+
+          // Clean up stats object to remove function references
+          const cleanStats = entry.stats ? {
+            dev: entry.stats.dev,
+            mode: entry.stats.mode,
+            nlink: entry.stats.nlink,
+            uid: entry.stats.uid,
+            gid: entry.stats.gid,
+            rdev: entry.stats.rdev,
+            blksize: entry.stats.blksize,
+            ino: entry.stats.ino,
+            size: entry.stats.size,
+            blocks: entry.stats.blocks,
+            atimeMs: entry.stats.atimeMs,
+            mtimeMs: entry.stats.mtimeMs,
+            ctimeMs: entry.stats.ctimeMs,
+            birthtimeMs: entry.stats.birthtimeMs,
+            sizeFormatted: formatBytes(entry.stats.size)
+          } : undefined;
+
+          return {
+            name: entry.name,
+            path: finalPath,
+            ...(cleanDirent && { dirent: cleanDirent }),
+            ...(cleanStats && { stats: cleanStats })
+          };
+        }) as any;
+      } else if (!opts.absolute) {
+        // String results from fast-glob, convert to workspace-relative paths
+        results = (results as string[]).map(resultPath => {
+          const absolutePath = path.isAbsolute(resultPath) ? resultPath : path.resolve(searchPath, resultPath);
+          return path.relative(workspacePath, absolutePath);
+        });
+      }
+      // If opts.absolute is true and not objectMode, fast-glob already returns absolute paths
 
       return {
         success: true,
-        directory: relativePathToCurrentDir,
-        absolutePath: dirPath,
-        parentDirectory: parentDirRelativePath,
-        files: files.sort(),
-        fileCount: files.length,
-        searchMode: 'current directory only',
-        extensionFilter: args.extension || 'all files',
-        navigation: {
-          canGoUp: !isRoot,
-          upPath: parentDirRelativePath || '.',
-          isRoot: isRoot
-        }
+        pattern: args.pattern,
+        searchPath: opts.cwd || '.',
+        absoluteSearchPath: searchPath,
+        results,
+        resultCount: results.length,
+        options: {
+          onlyFiles: fgOptions.onlyFiles,
+          onlyDirectories: fgOptions.onlyDirectories,
+          deep: fgOptions.deep,
+          dot: fgOptions.dot,
+          absolute: fgOptions.absolute,
+          objectMode: fgOptions.objectMode,
+          stats: fgOptions.stats,
+          caseSensitive: fgOptions.caseSensitiveMatch,
+          maxResults: defaultMaxResults
+        },
+        hasMore: results.length >= defaultMaxResults
       };
     } catch (error: any) {
       return {
-        error: `Failed to list files: ${error.message}`,
-        searchPath: args.path || '.',
-        extension: args.extension || 'all files',
+        error: `Glob search failed: ${error.message}`,
+        pattern: args.pattern,
+        searchPath: args.options?.cwd || '.',
+        details: error.stack
       };
     }
   },
@@ -619,34 +715,6 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
     }
   },
 
-  listFolders: async (args: { path?: string }) => {
-    try {
-      const dirPath = getSafeWorkspacePath(args.path || '.');
-      const entries = await fs.readdir(dirPath, { withFileTypes: true });
-      const folders = entries.filter(e => e.isDirectory()).map(e => e.name).sort();
-      
-      const relativePathToCurrentDir = path.relative(getSafeWorkspacePath(), dirPath) || '.';
-      const isRoot = relativePathToCurrentDir === '.';
-      const parentDirRelativePath = !isRoot ? path.dirname(relativePathToCurrentDir) : null;
-      
-      return {
-        success: true,
-        directory: relativePathToCurrentDir,
-        absolutePath: dirPath,
-        parentDirectory: parentDirRelativePath,
-        folders,
-        folderCount: folders.length,
-        navigation: {
-          canGoUp: !isRoot,
-          upPath: parentDirRelativePath || '.',
-          isRoot: isRoot
-        }
-      };
-    } catch (error: any) {
-      return { error: `Failed to list folders in '${args.path || '.'}': ${error.message}` };
-    }
-  },
-
   getCurrentDirectory: async () => {
     try {
       const workspaceRootPath = getSafeWorkspacePath(); 
@@ -662,371 +730,5 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
     } catch (error: any) {
       return { error: `Failed to get workspace directory information: ${error.message}` };
     }
-  },
-
-  findFiles: async (args: { 
-    pattern?: string; 
-    searchType?: 'files' | 'content' | 'folders' | 'both' | 'all'; 
-    path?: string; 
-    fileTypes?: string;
-    ignoreCase?: boolean; 
-    maxResults?: number;
-    includeHidden?: boolean;
-  }) => {
-    try {
-      const searchPath = getSafeWorkspacePath(args.path || '.'); // CWD for ripgrep & base for searchFolders
-      const searchType = args.searchType || 'files';
-      const ignoreCase = args.ignoreCase !== false; 
-      const maxResults = args.maxResults || 50;
-      const includeHidden = args.includeHidden || false;
-      
-      let pattern = args.pattern;
-      const activeFileTypes = args.fileTypes 
-          ? args.fileTypes.split(',').map(t => t.trim().replace(/^\./, '')).filter(t => t) 
-          : [];
-
-      if (!pattern && activeFileTypes.length > 0 && (searchType === 'files' || searchType === 'folders' || searchType === 'both' || searchType === 'all')) {
-        pattern = '*'; 
-      }
-      
-      if (!pattern && activeFileTypes.length === 0) {
-        return { 
-          error: 'A search pattern is required, or fileTypes must be specified for file/folder name searches.',
-          searchPath: args.path || '.',
-          searchType
-        };
-      }
-      // From here, `pattern` should be defined if needed by the search type logic.
-
-      const results: Array<{
-        path: string; 
-        type: 'filename' | 'content' | 'folder';
-        line?: number;
-        preview?: string;
-        match?: string; 
-      }> = [];
-
-      // Common folders to ignore for the JS-based searchFolders fallback. Ripgrep handles its own ignores.
-      const ignoredFoldersForJsSearch = [
-        'node_modules', '.git', '.svn', '.hg', '.bzr',
-        '.vscode', '.idea', 'dist', 'build', 'out',
-        'coverage', '.nyc_output', 'tmp', 'temp',
-        '.cache', '.next', '.nuxt', 'vendor', '__pycache__'
-      ];
-
-      // Ripgrep for Filenames
-      if ((searchType === 'files' || searchType === 'both' || searchType === 'all') && results.length < maxResults) {
-        const filenameSearchArgs: string[] = ['--files'];
-        if (!includeHidden) filenameSearchArgs.push('--no-hidden');
-        else filenameSearchArgs.push('--hidden'); // Explicitly include if requested
-
-        activeFileTypes.forEach(ext => filenameSearchArgs.push('--glob', `*.${ext}`));
-        
-        if (pattern && pattern !== '*') {
-            const globPattern = (pattern.includes('*') || pattern.includes('?') || pattern.includes('['))
-                                ? pattern
-                                : `*${pattern}*`; // Wrap simple patterns for contains-like behavior
-            filenameSearchArgs.push('--glob', globPattern);
-        }
-        
-        try {
-          const filenameResultsOutput = await runRipgrep(filenameSearchArgs, searchPath);
-          filenameResultsOutput.split('\n').forEach(line => {
-            if (line.trim() && results.length < maxResults) {
-              const absoluteMatchPath = path.resolve(searchPath, line.trim());
-              results.push({
-                path: path.relative(getSafeWorkspacePath(), absoluteMatchPath),
-                type: 'filename'
-              });
-            }
-          });
-        } catch (error: any) {
-          console.warn(`Ripgrep filename search failed (pattern: "${pattern}", path: "${args.path || '.'}"): ${error.message}. Consider fallback if no other results.`);
-        }
-      }
-      
-      // Ripgrep for Content
-      if ((searchType === 'content' || searchType === 'both' || searchType === 'all') && results.length < maxResults && pattern && pattern !== '*') {
-        const contentArgs: string[] = [];
-        if (ignoreCase) contentArgs.push('--ignore-case'); // More common rg flag
-        if (!includeHidden) contentArgs.push('--no-hidden');
-        else contentArgs.push('--hidden');
-
-        activeFileTypes.forEach(ext => contentArgs.push('--glob', `*.${ext}`));
-        
-        contentArgs.push('--line-number'); // rg flag for line numbers
-        contentArgs.push('--'); 
-        contentArgs.push(pattern);
-
-        try {
-          const contentResultsOutput = await runRipgrep(contentArgs, searchPath);
-          contentResultsOutput.split('\n').forEach(line => {
-            if (line.trim() && results.length < maxResults) {
-              const parts = line.match(/^([^:]+):(\d+):(.*)/); 
-              if (parts) {
-                const rawFilePath = parts[1];
-                const lineNum = parts[2];
-                const contentPreview = parts[3];
-                
-                const absoluteMatchPath = path.resolve(searchPath, rawFilePath.trim());
-                const relativeMatchPath = path.relative(getSafeWorkspacePath(), absoluteMatchPath);
-
-                results.push({
-                  path: relativeMatchPath,
-                  type: 'content',
-                  line: parseInt(lineNum, 10),
-                  preview: contentPreview.trim().substring(0, 150) + (contentPreview.length > 150 ? '...' : ''),
-                  match: contentPreview.trim()
-                });
-              }
-            }
-          });
-        } catch (error: any) {
-          console.warn(`Ripgrep content search failed (pattern: "${pattern}", path: "${args.path || '.'}"): ${error.message}. Consider fallback if no other results.`);
-        }
-      }
-      
-      // Folder Search (using JS recursive search as rg for pure folder names by pattern is less direct)
-      // Ripgrep *could* do this with `rg --files --type d --glob "pattern"`, but the JS version is already here.
-      if ((searchType === 'folders' || searchType === 'all') && results.length < maxResults && pattern) {
-        try {
-          // searchFolders expects paths relative to its starting `baseDir` (which is `searchPath` here)
-          // The results it pushes should already be workspace-relative if constructed correctly inside.
-          await searchFoldersRecursive(
-            searchPath, // baseDir for this search operation
-            pattern,
-            ignoreCase,
-            includeHidden,
-            ignoredFoldersForJsSearch,
-            results,
-            maxResults,
-            0,
-            6, // maxDepth
-            getSafeWorkspacePath() // workspaceRoot for making paths relative
-            );
-        } catch (error: any) {
-          console.warn(`Folder search (JS recursive) failed (pattern: "${pattern}", path: "${args.path || '.'}"): ${error.message}`);
-        }
-      }
-
-      // If Ripgrep failed significantly and no results, consider full fallback.
-      if (results.length === 0 && (searchType === 'content' || searchType === 'files')) {
-          const rgErrors = (console.warn.toString().includes("Ripgrep") && console.warn.toString().includes("failed")); // crude check
-          if (rgErrors || true) { // Or always run fallback if rg yields nothing for these types
-            console.log("Ripgrep yielded no results or failed for primary search types, attempting JS fallback.");
-            // return await fallbackSearch(args, searchPath); // Re-evaluate if this is the best strategy
-          }
-      }
-
-
-      return {
-        success: true,
-        pattern: args.pattern || (activeFileTypes.length > 0 ? '*' : 'undefined'),
-        searchType,
-        searchPathUsed: args.path || '.',
-        absoluteSearchPath: searchPath,
-        fileTypesFilter: args.fileTypes || 'none',
-        results: results.slice(0, maxResults),
-        resultCount: results.length,
-        hasMore: results.length >= maxResults && results.length > 0 
-      };
-    } catch (error: any) {
-      console.error(`Critical error in findFiles tool: ${error.stack || error.message}`);
-      return { error: `An unexpected error occurred during findFiles: ${error.message}` };
-    }
   }
 };
-
-// Helper function to search folders recursively (JS version)
-async function searchFoldersRecursive(
-  currentSearchDirAbs: string, // Absolute path of the directory currently being searched
-  pattern: string,
-  ignoreCase: boolean,
-  includeHidden: boolean,
-  ignoredFolders: string[],
-  results: Array<{ path: string; type: 'filename' | 'content' | 'folder'; line?: number; preview?: string; match?: string; }>,
-  maxResults: number,
-  currentDepth: number,
-  maxDepth: number,
-  workspaceRootAbs: string // Absolute path to the workspace root, for making result paths relative
-): Promise<void> {
-  if (currentDepth > maxDepth || results.length >= maxResults) {
-    return;
-  }
-
-  try {
-    const entries = await fs.readdir(currentSearchDirAbs, { withFileTypes: true });
-
-    for (const entry of entries) {
-      if (results.length >= maxResults) break;
-
-      if (entry.isDirectory()) {
-        const entryName = entry.name;
-        const entryAbsolutePath = path.join(currentSearchDirAbs, entryName);
-
-        if (!includeHidden && entryName.startsWith('.')) continue;
-        if (ignoredFolders.includes(entryName)) continue;
-
-        const patternToTest = ignoreCase ? pattern.toLowerCase() : pattern;
-        const nameToTest = ignoreCase ? entryName.toLowerCase() : entryName;
-
-        let match = false;
-        if (pattern === '*') {
-            match = true;
-        } else if (pattern.includes('*') || pattern.includes('?') || pattern.includes('[')) {
-            const regexPatternStr = '^' + pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*').replace(/\\\?/g, '.') + '$';
-            const regexPattern = new RegExp(regexPatternStr, ignoreCase ? 'i' : '');
-            match = regexPattern.test(entryName);
-        } else {
-            match = nameToTest.includes(patternToTest);
-        }
-
-        if (match) {
-          results.push({
-            path: path.relative(workspaceRootAbs, entryAbsolutePath), // Make path relative to workspace
-            type: 'folder'
-          });
-        }
-
-        if (currentDepth < maxDepth && results.length < maxResults) {
-          await searchFoldersRecursive(entryAbsolutePath, pattern, ignoreCase, includeHidden, ignoredFolders, results, maxResults, currentDepth + 1, maxDepth, workspaceRootAbs);
-        }
-      }
-    }
-  } catch (error) { /* Skip unreadable directories */ }
-}
-
-
-// Helper function to run ripgrep
-async function runRipgrep(args: string[], cwd: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    // console.log(`Spawning rg with args: [${args.join(' ')}] in cwd: ${cwd}`);
-    const rg = spawn('rg', args, { cwd });
-    let stdout = '';
-    let stderr = '';
-
-    rg.stdout.on('data', (data) => { stdout += data.toString(); });
-    rg.stderr.on('data', (data) => { stderr += data.toString(); });
-
-    rg.on('close', (code) => {
-      if (code === 0) { 
-        resolve(stdout);
-      } else if (code === 1) { // No matches found is not an error for rg, stdout is empty.
-        resolve(stdout); 
-      } else { 
-        reject(new Error(`ripgrep command [rg ${args.join(' ')}] failed in ${cwd} with code ${code}: ${stderr || stdout}`));
-      }
-    });
-    rg.on('error', (error) => { 
-      reject(new Error(`Failed to start ripgrep process (is 'rg' installed and in PATH?): ${error.message}`));
-    });
-  });
-}
-
-// Fallback search function (Simplified, as full fallback is complex and rg is preferred)
-// This is more a placeholder for a more robust JS-based fallback if needed.
-// For now, the primary strategy relies on Ripgrep for files/content and the JS searchFoldersRecursive for folders.
-async function fallbackSearch(
-    originalArgs: { 
-        pattern?: string; 
-        searchType?: 'files' | 'content' | 'folders' | 'both' | 'all'; 
-        path?: string; 
-        fileTypes?: string; 
-        ignoreCase?: boolean; 
-        maxResults?: number;
-        includeHidden?: boolean;
-    }, 
-    absoluteSearchPathStart: string
-): Promise<any> {
-  console.warn("Fallback search activated. This is a basic JS implementation and may be slower or less accurate than Ripgrep.");
-  const results: Array<{ path: string; type: 'filename' | 'content' | 'folder'; line?: number; preview?: string }> = [];
-  const { pattern, searchType = 'files', fileTypes, ignoreCase = true, maxResults = 50, includeHidden = false } = originalArgs;
-
-  if (!pattern) {
-      return { success: true, fallback: true, message: "Fallback search requires a pattern.", results: [], resultCount: 0 };
-  }
-
-  const activeFileTypesParsed = fileTypes 
-      ? fileTypes.split(',').map(t => t.trim().replace(/^\./, '')).filter(t => t) 
-      : [];
-  const searchPatternEffective = ignoreCase && pattern ? pattern.toLowerCase() : pattern;
-  const workspaceRootAbs = getSafeWorkspacePath(); // For making paths relative
-
-  const searchInDirectoryRecursiveJS = async (currentDirAbs: string) => {
-    if (results.length >= maxResults) return;
-
-    try {
-      const entries = await fs.readdir(currentDirAbs, { withFileTypes: true });
-      
-      for (const entry of entries) {
-        if (results.length >= maxResults) break;
-
-        const entryName = entry.name;
-        const entryAbsPath = path.join(currentDirAbs, entryName);
-        const entryPathRelToWorkspace = path.relative(workspaceRootAbs, entryAbsPath);
-
-        if (!includeHidden && entryName.startsWith('.')) continue;
-        
-        if (entry.isDirectory()) {
-          if (searchType === 'folders' || searchType === 'all') {
-            const nameToTest = ignoreCase ? entryName.toLowerCase() : entryName;
-            if (nameToTest.includes(searchPatternEffective!)) {
-              results.push({ path: entryPathRelToWorkspace, type: 'folder' });
-              if (results.length >= maxResults) return;
-            }
-          }
-          await searchInDirectoryRecursiveJS(entryAbsPath); // Recurse
-        } else if (entry.isFile()) {
-          let typeMatch = true;
-          if (activeFileTypesParsed.length > 0) {
-            typeMatch = activeFileTypesParsed.some(ext => entryName.toLowerCase().endsWith(`.${ext.toLowerCase()}`));
-          }
-          if (!typeMatch) continue;
-
-          if (searchType === 'files' || searchType === 'both' || searchType === 'all') {
-            const nameToTest = ignoreCase ? entryName.toLowerCase() : entryName;
-            if (nameToTest.includes(searchPatternEffective!)) {
-              results.push({ path: entryPathRelToWorkspace, type: 'filename' });
-              if (results.length >= maxResults) return;
-            }
-          }
-          
-          if ((searchType === 'content' || searchType === 'both' || searchType === 'all') && results.length < maxResults && pattern && pattern !== '*') {
-            try {
-              const content = await fs.readFile(entryAbsPath, 'utf-8');
-              const lines = content.split('\n');
-              for (let i = 0; i < lines.length; i++) {
-                if (results.length >= maxResults) break;
-                const lineContent = lines[i];
-                const lineToTest = ignoreCase ? lineContent.toLowerCase() : lineContent;
-                if (lineToTest.includes(searchPatternEffective!)) {
-                  results.push({
-                    path: entryPathRelToWorkspace,
-                    type: 'content',
-                    line: i + 1,
-                    preview: lineContent.trim().substring(0, 100) + (lineContent.length > 100 ? '...' : '')
-                  });
-                }
-              }
-            } catch { /* Skip unreadable files */ }
-          }
-        }
-      }
-    } catch { /* Skip unreadable directories */ }
-  };
-  
-  await searchInDirectoryRecursiveJS(absoluteSearchPathStart);
-  
-  return {
-    success: true,
-    pattern: pattern,
-    searchType,
-    searchPathUsed: originalArgs.path || '.',
-    fileTypesFilter: fileTypes || 'none',
-    results: results.slice(0, maxResults),
-    resultCount: results.length,
-    hasMore: results.length >= maxResults && results.length > 0,
-    fallbackUsed: true,
-    message: "Search performed using JavaScript fallback."
-  };
-}

@@ -119,10 +119,10 @@ npm start
 ## Available Tools
 
 ### File Tools
-- `listFiles` - List files and directories
+- `glob` - Powerful file and directory discovery using glob patterns
 - `readFile` - Read file contents
 - `writeFile` - Create or update files
-- `appendToFile` - Append content to files
+- `updateFile` - Make targeted edits to existing files
 - `deleteFile` - Delete files
 - `createFolder` - Create directories
 - `deleteFolder` - Delete directories
@@ -130,6 +130,9 @@ npm start
 - `renameFile` - Rename files
 - `copyFile` - Copy files
 - `copyFolder` - Copy directories
+- `getFileInfo` - Get detailed file/directory metadata
+- `getFileSizes` - Get file sizes for multiple files
+- `getCurrentDirectory` - Get workspace information
 
 ### CSV Tools
 - `loadCSV` - Load and display CSV data

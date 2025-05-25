@@ -657,6 +657,8 @@ export function startInkInterface(): void {
     console.error('');
     console.error('Or add it to your shell profile (~/.bashrc, ~/.zshrc, etc.):');
     console.error('  echo \'export OPENROUTER_API_KEY="your-api-key-here"\' >> ~/.zshrc');
+    console.error('');
+    console.error('You can get an API key from: https://openrouter.ai/settings/keys');
     process.exit(1);
   }
 
