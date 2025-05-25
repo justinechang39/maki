@@ -1,8 +1,10 @@
 #!/usr/bin/env node
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { render, Box, Text, useInput, useApp, useStdout } from 'ink';
-import { Spinner, TextInput, StatusMessage, ThemeProvider, defaultTheme } from '@inkjs/ui';
-import chalk from 'chalk';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { render, Box, Text, useInput, useApp } from 'ink';
+import { ThemeProvider, defaultTheme } from '@inkjs/ui';
+import { ThreadSelector } from '../components/ThreadSelector.js';
+import { ThreadManager } from '../components/ThreadManager.js';
+import { ChatInterface } from '../components/ChatInterface.js';
 import { MAX_CONVERSATION_LENGTH } from '../core/config.js';
 import { validateConversationHistory } from '../core/utils.js';
 import { callOpenRouterAPI } from '../core/api.js';
@@ -22,103 +24,7 @@ interface ThreadListItem {
   messageCount: number;
 }
 
-const ThreadSelector: React.FC<{
-  threads: ThreadListItem[];
-  selectedIndex: number;
-  onSelect: (threadId: string | 'new') => void;
-}> = ({ threads, selectedIndex, onSelect }) => {
-  const items = [
-    { name: 'Start a new thread', value: 'new', isNew: true } as const,
-    ...threads.map(thread => ({
-      name: `${thread.title || 'Untitled'}`,
-      value: thread.id,
-      subtitle: `${thread.messageCount} messages • ${thread.createdAt.toLocaleDateString()}`,
-      isNew: false
-    } as const))
-  ];
 
-  useInput((input, key) => {
-    if (key.return) {
-      onSelect(items[selectedIndex].value);
-    }
-  });
-
-  return (
-    <Box flexDirection="column" padding={1}>
-      <Box paddingBottom={1}>
-        <Text bold color="cyan">▌threads</Text>
-      </Box>
-      
-      <Box flexDirection="column">
-        {items.map((item, index) => (
-          <Box key={index}>
-            <Text color={index === selectedIndex ? 'blue' : 'white'} 
-                  backgroundColor={index === selectedIndex ? 'blue' : undefined}
-                  inverse={index === selectedIndex}>
-              {index === selectedIndex ? '▶' : ' '} {item.isNew ? '+' : '•'} {item.name}
-            </Text>
-            {!item.isNew && 'subtitle' in item && item.subtitle && (
-              <Box paddingLeft={2}>
-                <Text dimColor>{item.subtitle}</Text>
-              </Box>
-            )}
-          </Box>
-        ))}
-      </Box>
-      
-      <Box paddingTop={1}>
-        <Text dimColor>↑↓ • ⏎ • ^C</Text>
-      </Box>
-    </Box>
-  );
-};
-
-const ThreadManager: React.FC<{
-  thread: ThreadListItem;
-  selectedIndex: number;
-  onContinue: () => void;
-  onDelete: () => void;
-  onBack: () => void;
-  isDeleting?: boolean;
-}> = ({ thread, selectedIndex, onContinue, onDelete, onBack, isDeleting = false }) => {
-  const options = [
-    { name: 'Continue conversation', icon: '▶️', action: onContinue, color: 'green' },
-    { name: 'Delete thread', icon: '🗑️', action: onDelete, color: 'red' },
-    { name: 'Back to list', icon: '⬅️', action: onBack, color: 'gray' }
-  ];
-
-  useInput((input, key) => {
-    if (key.return && !isDeleting) {
-      options[selectedIndex].action();
-    }
-  });
-
-  return (
-    <Box flexDirection="column" padding={1}>
-      <Box paddingBottom={1}>
-        <Text bold color="yellow">▌{thread.title || 'untitled'}</Text>
-        <Text dimColor>{thread.messageCount} msgs • {thread.createdAt.toLocaleDateString()}</Text>
-      </Box>
-      
-      <Box flexDirection="column">
-        {options.map((option, index) => (
-          <Box key={index}>
-            <Text color={index === selectedIndex ? option.color : 'white'} 
-                  backgroundColor={index === selectedIndex ? option.color : undefined}
-                  inverse={index === selectedIndex}>
-              {index === selectedIndex ? '▶' : ' '} {option.icon} {option.name}
-              {index === 1 && isDeleting ? ' ⏳' : ''}
-            </Text>
-          </Box>
-        ))}
-      </Box>
-      
-      <Box paddingTop={1}>
-        <Text dimColor>↑↓ • ⏎ • ^C</Text>
-      </Box>
-    </Box>
-  );
-};
 
 const App: React.FC<AppProps> = () => {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
@@ -137,20 +43,10 @@ const App: React.FC<AppProps> = () => {
   const isCreatingThread = useRef(false);
   const isDeletingThreadRef = useRef(false);
   const { exit } = useApp();
-  const { stdout } = useStdout();
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Get terminal dimensions for reference only
-  const terminalHeight = stdout?.rows || 24;
-  const terminalWidth = stdout?.columns || 80;
-  
-  // Don't virtualize messages - let them flow naturally and allow scrolling
-  const visibleMessages = messages;
-
-  // Note: Debounced updates removed as they're not needed with current message flow
-
-  // Format tool results for better display
-  const formatToolResult = useCallback((toolName: string, args: any, result: any): string => {
+  // Format tool results for better display - no need for useCallback, it's a pure function
+  const formatToolResult = (toolName: string, args: any, result: any): string => {
     if (result.error) {
       return `${toolName} failed: ${result.error}`;
     }
@@ -269,7 +165,7 @@ const App: React.FC<AppProps> = () => {
         }
         return `${toolName} completed`;
     }
-  }, []);
+  };
 
   // Load threads on mount
   useEffect(() => {
@@ -468,12 +364,8 @@ const App: React.FC<AppProps> = () => {
       return { error: `Unknown tool: ${name}` };
     }
 
-    // Choose a random spinner type for this tool execution
-    const spinnerTypes = ['dots', 'dots2', 'circle', 'binary', 'bounce', 'pulse', 'arc', 'betaWave', 'aesthetic', 'mindblown', 'timeTravel', 'orangePulse'];
-    const randomSpinner = spinnerTypes[Math.floor(Math.random() * spinnerTypes.length)];
-
     try {
-      // Show tool execution with spinner
+      // Show tool execution
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: name === 'think' ? args.thoughts : `${name}`,
@@ -672,6 +564,10 @@ const App: React.FC<AppProps> = () => {
     }
   }, [isProcessing, conversationHistory, processAssistantResponse, exit, currentThreadId, generateThreadTitle]);
 
+  const handleInputKeyChange = useCallback(() => {
+    setInputKey(prev => prev + 1);
+  }, []);
+
   useInput((input, key) => {
     if (isSelectingThread) {
       if (key.upArrow) {
@@ -706,96 +602,12 @@ const App: React.FC<AppProps> = () => {
     }
   });
 
-  const formatMessage = useCallback((msg: DisplayMessage) => {
-    if (msg.isToolResult) {
-      const isError = msg.content?.includes('❌');
-      const isSuccess = msg.content?.includes('✅') || (!isError && msg.content);
-      const borderColor = isError ? 'red' : isSuccess ? 'green' : 'blue';
-      const iconColor = isError ? 'red' : isSuccess ? 'green' : 'blue';
-      const icon = isError ? '❌' : isSuccess ? '✅' : '⚙️';
-      
-      return (
-        <Box width="100%" paddingX={2} paddingY={1} borderStyle="round" borderColor={borderColor}>
-          <Box flexDirection="column">
-            <Box marginBottom={1}>
-              <Text color={iconColor} bold>{icon} tool result</Text>
-            </Box>
-            <Text color={iconColor} wrap="wrap">{msg.content?.replace(/^[✅❌⚠️]\s*/, '') || ''}</Text>
-          </Box>
-        </Box>
-      );
-    }
-    
-    if (msg.isToolExecution) {
-      const spinnerTypes = ['dots', 'dots2', 'circle', 'binary', 'bounce', 'arc', 'betaWave', 'aesthetic', 'mindblown', 'timeTravel', 'orangePulse', 'bluePulse'];
-      const randomSpinner = spinnerTypes[Math.floor(Math.random() * spinnerTypes.length)] as any;
-      
-      if (msg.toolName === 'think') {
-        return (
-          <Box width="100%" paddingX={2} paddingY={1} borderStyle="round" borderColor="magenta">
-            <Box>
-              <Box marginRight={1}>
-                <Spinner type={randomSpinner} />
-              </Box>
-              <Text color="magenta" italic bold>thinking: {msg.content}</Text>
-            </Box>
-          </Box>
-        );
-      }
-      
-      return (
-        <Box width="100%" paddingX={2} paddingY={1} borderStyle="round" borderColor="cyan">
-          <Box>
-            <Box marginRight={1}>
-              <Spinner type={randomSpinner} />
-            </Box>
-            <Text color="cyan" bold>executing {msg.toolName}...</Text>
-          </Box>
-        </Box>
-      );
-    }
-    
-    if (msg.isThinking) {
-      return (
-        <Box width="100%" paddingX={2} paddingY={1} borderStyle="round" borderColor="magenta">
-          <Box flexDirection="column">
-            <Box marginBottom={1}>
-              <Text color="magenta" bold>💭 thinking</Text>
-            </Box>
-            <Text color="magenta" italic wrap="wrap">{msg.content}</Text>
-          </Box>
-        </Box>
-      );
-    }
-    
-    const isUser = msg.role === 'user';
-    const isAssistant = msg.role === 'assistant';
-    
-    if (isUser) {
-      return (
-        <Box>
-          <Text color="blue">▌{msg.content}</Text>
-        </Box>
-      );
-    }
-    
-    if (isAssistant) {
-      return (
-        <Box>
-          <Text color="green">▌{msg.content}</Text>
-        </Box>
-      );
-    }
-    
-    return `⚙️ ${chalk.gray(msg.content || '')}`;
-  }, []);
-
   if (isLoadingThreads) {
     return (
       <Box flexDirection="column" height="100%" justifyContent="center" alignItems="center">
         <Box flexDirection="column" alignItems="center">
           <Text bold color="cyan">▌OpenRouter Agent</Text>
-          <Spinner label=" Loading..." type="binary"/>
+          <Text>Loading...</Text>
         </Box>
       </Box>
     );
@@ -837,57 +649,13 @@ const App: React.FC<AppProps> = () => {
   }
 
   return (
-    <Box flexDirection="column" height="100%">
-      <Box paddingY={1}>
-        <Text bold color="cyan">▌OpenRouter Agent</Text>
-      </Box>
-      
-      <Box flexDirection="column" flexGrow={1} marginBottom={1}>
-        <Box flexDirection="column">
-          {visibleMessages.map((msg, index) => {
-            const contentHash = msg.content ? msg.content.length + msg.content.slice(-10) : 'empty';
-            return (
-              <Box key={`msg-${index}-${msg.role}-${contentHash}`}>
-                {formatMessage(msg)}
-              </Box>
-            );
-          })}
-          
-          {isProcessing && (() => {
-            const spinnerTypes = ['dots', 'dots2', 'circle', 'binary', 'bounce', 'arc', 'betaWave', 'aesthetic', 'mindblown', 'timeTravel', 'orangePulse', 'bluePulse'];
-            const randomSpinner = spinnerTypes[Math.floor(Math.random() * spinnerTypes.length)] as any;
-            
-            return (
-              <Box width="100%" paddingX={2} paddingY={1} borderStyle="round" borderColor="yellow">
-                <Box>
-                  <Box marginRight={1}>
-                    <Spinner type={randomSpinner} />
-                  </Box>
-                  <Text color="yellow" bold>processing your request...</Text>
-                </Box>
-              </Box>
-            );
-          })()}
-        </Box>
-      </Box>
-      
-      <Box paddingY={1}>
-        <Box width="100%" borderStyle="single" borderColor={isProcessing ? 'yellow' : 'blue'} paddingX={1}>
-          <TextInput
-            key={inputKey}
-            placeholder={isProcessing ? "processing..." : "ask me anything..."}
-            isDisabled={isProcessing}
-            onSubmit={(value) => {
-              handleSubmit(value);
-              setInputKey(prev => prev + 1);
-            }}
-          />
-        </Box>
-        <Box paddingTop={1}>
-          <Text dimColor>⏎ send • ^C exit</Text>
-        </Box>
-      </Box>
-    </Box>
+    <ChatInterface
+      messages={messages}
+      isProcessing={isProcessing}
+      inputKey={inputKey}
+      onSubmit={handleSubmit}
+      onInputKeyChange={handleInputKeyChange}
+    />
   );
 };
 
