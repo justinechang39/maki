@@ -606,7 +606,7 @@ const App: React.FC<AppProps> = () => {
     return (
       <Box flexDirection="column" height="100%" justifyContent="center" alignItems="center">
         <Box flexDirection="column" alignItems="center">
-          <Text bold color="cyan">▌OpenRouter Agent</Text>
+          <Text bold color="cyan">▌maki</Text>
           <Text>Loading...</Text>
         </Box>
       </Box>
@@ -617,7 +617,7 @@ const App: React.FC<AppProps> = () => {
     return (
       <Box flexDirection="column" height="100%">
         <Box paddingY={1}>
-          <Text bold color="cyan">▌OpenRouter Agent</Text>
+          <Text bold color="cyan">▌maki</Text>
         </Box>
         
         <ThreadSelector 
@@ -633,7 +633,7 @@ const App: React.FC<AppProps> = () => {
     return (
       <Box flexDirection="column" height="100%">
         <Box paddingY={1}>
-          <Text bold color="cyan">▌OpenRouter Agent</Text>
+          <Text bold color="cyan">▌maki</Text>
         </Box>
         
         <ThreadManager
@@ -660,7 +660,7 @@ const App: React.FC<AppProps> = () => {
 };
 
 export function startInkInterface(): void {
-  console.log('🚀 Starting OpenRouter Agent...');
+  console.log('🚀 Starting maki...');
   
   // Check for API key before starting
   if (!OPENROUTER_API_KEY) {

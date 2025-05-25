@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, Static } from 'ink';
 import { MessageRenderer } from './MessageRenderer.js';
 import { ProcessingIndicator } from './ProcessingIndicator.js';
 import { InputArea } from './InputArea.js';
@@ -23,7 +23,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = React.memo(({
   return (
     <Box flexDirection="column">
       {/* Header */}
-      <Text bold color="cyan">▌OpenRouter Agent</Text>
+      <Static items={[{ id: 'header' }]}>
+        {(item) => <Text key={item.id} bold color="cyan">▌maki</Text>}
+      </Static>
       
       {/* Messages */}
       <Box flexDirection="column" paddingY={1}>

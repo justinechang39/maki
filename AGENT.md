@@ -1,7 +1,7 @@
-# OpenRouter Agent - Project Structure
+# maki - Project Structure
 
 ## Overview
-This is an OpenRouter agent CLI tool for file operations, CSV manipulation, todo management, and web content fetching.
+This is a maki CLI tool for file operations, CSV manipulation, todo management, and web content fetching.
 
 ## Commands
 - `npm run dev` - Start development interface
