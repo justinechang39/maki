@@ -15,7 +15,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = React.memo(({ mes
     const icon = isError ? '❌' : isSuccess ? '✅' : '⚙️';
     
     return (
-      <Box width="100%" paddingX={2} paddingY={1} borderStyle="round" borderColor={borderColor}>
+      <Box paddingX={2} paddingY={1} borderStyle="round" borderColor={borderColor}>
         <Box flexDirection="column">
           <Box marginBottom={1}>
             <Text color={iconColor} bold>{icon} tool result</Text>
@@ -29,14 +29,14 @@ export const MessageRenderer: React.FC<MessageRendererProps> = React.memo(({ mes
   if (msg.isToolExecution) {
     if (msg.toolName === 'think') {
       return (
-        <Box width="100%" paddingX={2} paddingY={1} borderStyle="round" borderColor="magenta">
+        <Box paddingX={2} paddingY={1} borderStyle="round" borderColor="magenta">
           <Text color="magenta" italic bold>thinking: {msg.content}</Text>
         </Box>
       );
     }
     
     return (
-      <Box width="100%" paddingX={2} paddingY={1} borderStyle="round" borderColor="cyan">
+      <Box paddingX={2} paddingY={1} borderStyle="round" borderColor="cyan">
         <Text color="cyan" bold>executing {msg.toolName}...</Text>
       </Box>
     );
@@ -44,7 +44,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = React.memo(({ mes
   
   if (msg.isThinking) {
     return (
-      <Box width="100%" paddingX={2} paddingY={1} borderStyle="round" borderColor="magenta">
+      <Box paddingX={2} paddingY={1} borderStyle="round" borderColor="magenta">
         <Box flexDirection="column">
           <Box marginBottom={1}>
             <Text color="magenta" bold>💭 thinking</Text>

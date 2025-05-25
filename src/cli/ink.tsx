@@ -364,6 +364,8 @@ const App: React.FC<AppProps> = () => {
       return { error: `Unknown tool: ${name}` };
     }
 
+    const toolId = `tool-${Date.now()}-${Math.random()}`;
+
     try {
       // Show tool execution
       setMessages(prev => [...prev, {
@@ -371,52 +373,36 @@ const App: React.FC<AppProps> = () => {
         content: name === 'think' ? args.thoughts : `${name}`,
         isToolExecution: true,
         toolName: name,
-        isProcessing: true
+        isProcessing: true,
+        id: toolId
       } as DisplayMessage]);
 
       const result = await implementation(args);
       
-      // Update with result
-      setMessages(prev => {
-        const newMessages = [...prev];
-        // Remove the executing message
-        newMessages.pop();
-        
-        // Special display for 'think' tool
-        if (name === 'think') {
-          newMessages.push({
-            role: 'assistant',
-            content: args.thoughts,
-            isThinking: true
-          } as DisplayMessage);
-        } else {
-          // Show detailed completion for other tools with formatted result
-          const resultDisplay = formatToolResult(name, args, result);
-          newMessages.push({
-            role: 'assistant',
-            content: resultDisplay,
-            isProcessing: false,
-            isToolResult: true
-          } as DisplayMessage);
-        }
-        
-        return newMessages;
-      });
+      // Replace executing message with result using stable ID
+      setMessages(prev => prev.map(msg => 
+        msg.id === toolId ? {
+          role: 'assistant',
+          content: name === 'think' ? args.thoughts : formatToolResult(name, args, result),
+          isProcessing: false,
+          isToolResult: name !== 'think',
+          isThinking: name === 'think',
+          id: toolId
+        } as DisplayMessage : msg
+      ));
       
       return result;
     } catch (error: any) {
-      // Remove executing message and add error
-      setMessages(prev => {
-        const newMessages = [...prev];
-        newMessages.pop(); // Remove executing message
-        newMessages.push({
+      // Replace executing message with error using stable ID
+      setMessages(prev => prev.map(msg => 
+        msg.id === toolId ? {
           role: 'assistant',
           content: `❌ ${name} failed: ${error.message}`,
           isProcessing: false,
-          isToolResult: true
-        } as DisplayMessage);
-        return newMessages;
-      });
+          isToolResult: true,
+          id: toolId
+        } as DisplayMessage : msg
+      ));
       return { error: error.message };
     }
   }, [formatToolResult]);

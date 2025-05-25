@@ -21,31 +21,35 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = React.memo(({
   onInputKeyChange 
 }) => {
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" height="100%">
       {/* Header */}
       <Static items={[{ id: 'header' }]}>
         {(item) => <Text key={item.id} bold color="cyan">▌maki</Text>}
       </Static>
       
-      {/* Messages */}
-      <Box flexDirection="column" paddingY={1}>
+      {/* Messages Container with stable positioning */}
+      <Box flexDirection="column" paddingY={1} flexGrow={1} minHeight={0} overflowY="hidden">
         {messages.map((msg, index) => (
-          <Box key={index}>
+          <Box key={msg.id || `msg-${index}`}>
             <MessageRenderer message={msg} />
           </Box>
         ))}
       </Box>
       
       {/* Processing Status */}
-      <ProcessingIndicator isProcessing={isProcessing} />
+      <Box flexShrink={0}>
+        <ProcessingIndicator isProcessing={isProcessing} />
+      </Box>
       
       {/* Input */}
-      <InputArea
-        inputKey={inputKey}
-        isProcessing={isProcessing}
-        onSubmit={onSubmit}
-        onInputKeyChange={onInputKeyChange}
-      />
+      <Box flexShrink={0}>
+        <InputArea
+          inputKey={inputKey}
+          isProcessing={isProcessing}
+          onSubmit={onSubmit}
+          onInputKeyChange={onInputKeyChange}
+        />
+      </Box>
     </Box>
   );
 });
