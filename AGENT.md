@@ -43,6 +43,33 @@ Set your OpenRouter API key:
 export OPENROUTER_API_KEY="your-api-key-here"
 ```
 
+## AI Agent Guidelines
+
+### File Finding Best Practices
+
+**For finding files in subdirectories:**
+- Use `findFiles` for powerful recursive search with patterns and specific file types
+- Use `listFiles` only for immediate directory listing (non-recursive)
+
+**For finding images:**
+```javascript
+// Good - finds PNG files recursively
+findFiles({ searchType: "files", path: "folder/path", fileType: "png" })
+
+// Good - finds all files matching a pattern
+findFiles({ searchType: "files", pattern: ".*\\.(png|jpg|jpeg|gif)$" })
+
+// Bad - won't find images in subdirectories
+listFiles({ path: "folder/path", extension: "png" })
+```
+
+**For copying multiple images:**
+1. Use `findFiles` with `fileType` to discover image files (run once per format: png, jpg, etc.)
+2. Use `createFolder` to create destination folder
+3. Use `copyFile` in a loop for each image found
+
+**Common image extensions:** png, jpg, jpeg, gif, webp, svg, bmp, tiff
+
 ## Workspace
 
 The agent operates within a `file_assistant_workspace` directory relative to the project root.
