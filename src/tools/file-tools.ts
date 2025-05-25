@@ -1,5 +1,6 @@
 import * as fs from 'fs/promises';
 import path from 'path';
+import { spawn } from 'child_process';
 import { WORKSPACE_DIRECTORY_NAME } from '../core/config.js';
 import { getSafeWorkspacePath } from '../core/utils.js';
 import type { Tool } from '../core/types.js';
@@ -254,20 +255,46 @@ export const fileTools: Tool[] = [
       }
     }
   },
+
   {
     type: 'function',
     function: {
-      name: 'searchFiles',
-      description: `DISCOVERY TOOL: Search for files by name pattern or content. Use for finding files when you don't know exact locations or searching within file contents.`,
+      name: 'findFiles',
+      description: `POWERFUL SEARCH TOOL: Fast file and folder discovery using ripgrep. Use this to find files/folders by name patterns, search file contents, or locate specific code patterns. Perfect for code navigation and discovery tasks.`,
       parameters: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: 'Search term or pattern to find in filenames or content.' },
-          path: { type: 'string', description: `Directory to search within (relative to '${WORKSPACE_DIRECTORY_NAME}'). Searches recursively.` },
-          searchContent: { type: 'boolean', description: 'Whether to search inside file contents. Default: false (filename only).' },
-          extension: { type: 'string', description: 'Filter results by file extension (e.g., "txt", "js"). Omit the dot.' }
+          pattern: { 
+            type: 'string', 
+            description: 'Search pattern/term. For filenames: use simple text or regex. For content: search for exact text, function names, variable names, or regex patterns.' 
+          },
+          searchType: {
+            type: 'string',
+            enum: ['files', 'content', 'folders', 'both', 'all'],
+            description: 'What to search: "files" (filenames only), "content" (inside files), "folders" (folder names), "both" (files and content), "all" (files, content, and folders). Default: "files"'
+          },
+          path: { 
+            type: 'string', 
+            description: `Directory to search within (relative to '${WORKSPACE_DIRECTORY_NAME}'). Defaults to workspace root. Searches recursively through subdirectories.` 
+          },
+          fileType: { 
+            type: 'string', 
+            description: 'Filter by file extension or type (e.g., "js", "ts", "json", "md"). Omit the dot. Helps narrow results to specific file types.' 
+          },
+          ignoreCase: { 
+            type: 'boolean', 
+            description: 'Whether to ignore case sensitivity in search. Default: true for broader matches.' 
+          },
+          maxResults: { 
+            type: 'number', 
+            description: 'Maximum number of results to return. Default: 50. Use smaller numbers for focused searches.' 
+          },
+          includeHidden: {
+            type: 'boolean',
+            description: 'Whether to include hidden files/directories (starting with .). Default: false.'
+          }
         },
-        required: ['query']
+        required: ['pattern']
       }
     }
   }
@@ -634,69 +661,307 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
     }
   },
 
-  searchFiles: async (args: { query: string; path?: string; searchContent?: boolean; extension?: string }) => {
+
+
+  findFiles: async (args: { 
+    pattern: string; 
+    searchType?: 'files' | 'content' | 'folders' | 'both' | 'all'; 
+    path?: string; 
+    fileType?: string; 
+    ignoreCase?: boolean; 
+    maxResults?: number;
+    includeHidden?: boolean;
+  }) => {
     try {
       const searchPath = getSafeWorkspacePath(args.path || '.');
-      const results: Array<{ path: string; type: 'filename' | 'content'; line?: number; preview?: string }> = [];
+      const searchType = args.searchType || 'files';
+      const ignoreCase = args.ignoreCase !== false; // Default to true
+      const maxResults = args.maxResults || 50;
+      const includeHidden = args.includeHidden || false;
+
+      const results: Array<{
+        path: string;
+        type: 'filename' | 'content' | 'folder';
+        line?: number;
+        preview?: string;
+        match?: string;
+      }> = [];
+
+      // Common folders to ignore for performance and relevance
+      const ignoredFolders = [
+        'node_modules', '.git', '.svn', '.hg', '.bzr',
+        '.vscode', '.idea', 'dist', 'build', 'out',
+        'coverage', '.nyc_output', 'tmp', 'temp',
+        '.cache', '.next', '.nuxt', 'vendor'
+      ];
+
+      // Search folders if requested
+      if (searchType === 'folders' || searchType === 'all') {
+        try {
+          await searchFolders(searchPath, '', args.pattern, ignoreCase, includeHidden, ignoredFolders, results, maxResults, 0, 6);
+        } catch (error) {
+          console.warn('Folder search failed:', error);
+        }
+      }
+
+      // Build ripgrep command for files
+      const rgArgs = [];
       
-      const searchInDirectory = async (dirPath: string, relativePath: string = '') => {
-        const entries = await fs.readdir(dirPath, { withFileTypes: true });
-        
-        for (const entry of entries) {
-          const entryPath = path.join(dirPath, entry.name);
-          const entryRelativePath = path.join(relativePath, entry.name);
-          
-          if (entry.isDirectory()) {
-            await searchInDirectory(entryPath, entryRelativePath);
-          } else if (entry.isFile()) {
-            // Filter by extension if specified
-            if (args.extension) {
-              const ext = args.extension.startsWith('.') ? args.extension : `.${args.extension}`;
-              if (!entry.name.endsWith(ext)) continue;
-            }
-            
-            // Search filename
-            if (entry.name.toLowerCase().includes(args.query.toLowerCase())) {
-              results.push({
-                path: entryRelativePath,
-                type: 'filename'
-              });
-            }
-            
-            // Search content if requested
-            if (args.searchContent) {
-              try {
-                const content = await fs.readFile(entryPath, 'utf-8');
-                const lines = content.split('\n');
-                lines.forEach((line, index) => {
-                  if (line.toLowerCase().includes(args.query.toLowerCase())) {
-                    results.push({
-                      path: entryRelativePath,
-                      type: 'content',
-                      line: index + 1,
-                      preview: line.trim().substring(0, 100) + (line.length > 100 ? '...' : '')
-                    });
-                  }
+      if (searchType === 'files' || searchType === 'both' || searchType === 'all') {
+        // Search filenames
+        const filenameArgs = ['--files'];
+        if (!includeHidden) filenameArgs.push('--hidden', '--glob', '!.*');
+        if (args.fileType) {
+          const ext = args.fileType.startsWith('.') ? args.fileType : `.${args.fileType}`;
+          filenameArgs.push('--glob', `*${ext}`);
+        }
+
+        try {
+          const filenameResults = await runRipgrep(filenameArgs, searchPath);
+          filenameResults.split('\n').forEach(line => {
+            if (line.trim()) {
+              const filename = path.basename(line);
+              const searchPattern = ignoreCase ? args.pattern.toLowerCase() : args.pattern;
+              const fileToCheck = ignoreCase ? filename.toLowerCase() : filename;
+              
+              if (fileToCheck.includes(searchPattern) && results.length < maxResults) {
+                results.push({
+                  path: path.relative(getSafeWorkspacePath(), line.trim()),
+                  type: 'filename'
                 });
-              } catch {
-                // Skip files that can't be read as text
               }
             }
-          }
+          });
+        } catch (error) {
+          // Ripgrep not available, fall back to basic search if needed
+          console.warn('Ripgrep not available for filename search, using basic search');
         }
-      };
-      
-      await searchInDirectory(searchPath);
-      
+      }
+
+      if ((searchType === 'content' || searchType === 'both' || searchType === 'all') && results.length < maxResults) {
+        // Search file contents
+        const contentArgs = [];
+        if (ignoreCase) contentArgs.push('-i');
+        if (!includeHidden) contentArgs.push('--hidden', '--glob', '!.*');
+        if (args.fileType) {
+          const ext = args.fileType.startsWith('.') ? args.fileType : `.${args.fileType}`;
+          contentArgs.push('--glob', `*${ext}`);
+        }
+        contentArgs.push('-n', '--', args.pattern);
+
+        try {
+          const contentResults = await runRipgrep(contentArgs, searchPath);
+          contentResults.split('\n').forEach(line => {
+            if (line.trim() && results.length < maxResults) {
+              const [filePath, lineNum, ...contentParts] = line.split(':');
+              if (filePath && lineNum && contentParts.length > 0) {
+                const content = contentParts.join(':');
+                results.push({
+                  path: path.relative(getSafeWorkspacePath(), filePath.trim()),
+                  type: 'content',
+                  line: parseInt(lineNum, 10),
+                  preview: content.trim().substring(0, 100) + (content.length > 100 ? '...' : ''),
+                  match: content.trim()
+                });
+              }
+            }
+          });
+        } catch (error) {
+          // If ripgrep fails, fall back to basic search
+          console.warn('Ripgrep failed for content search, falling back to basic search');
+          return await fallbackSearch(args, searchPath);
+        }
+      }
+
       return {
         success: true,
-        query: args.query,
+        pattern: args.pattern,
+        searchType,
         searchPath: args.path || '.',
-        results,
-        resultCount: results.length
+        results: results.slice(0, maxResults),
+        resultCount: results.length,
+        hasMore: results.length === maxResults
       };
     } catch (error: any) {
       return { error: error.message };
     }
   }
 };
+
+// Helper function to search folders recursively with safety limits
+async function searchFolders(
+  dirPath: string, 
+  relativePath: string, 
+  pattern: string, 
+  ignoreCase: boolean, 
+  includeHidden: boolean, 
+  ignoredFolders: string[], 
+  results: Array<{ path: string; type: 'filename' | 'content' | 'folder'; line?: number; preview?: string; match?: string }>, 
+  maxResults: number, 
+  currentDepth: number, 
+  maxDepth: number
+): Promise<void> {
+  // Safety check: don't go too deep or if we have enough results
+  if (currentDepth > maxDepth || results.length >= maxResults) {
+    return;
+  }
+
+  try {
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    
+    for (const entry of entries) {
+      if (results.length >= maxResults) break;
+      
+      if (entry.isDirectory()) {
+        const entryName = entry.name;
+        const entryPath = path.join(dirPath, entryName);
+        const entryRelativePath = path.join(relativePath, entryName);
+        
+        // Skip hidden folders if not included
+        if (!includeHidden && entryName.startsWith('.')) continue;
+        
+        // Skip ignored folders
+        if (ignoredFolders.includes(entryName)) continue;
+        
+        // Check if folder name matches pattern
+        const searchPattern = ignoreCase ? pattern.toLowerCase() : pattern;
+        const folderToCheck = ignoreCase ? entryName.toLowerCase() : entryName;
+        
+        if (folderToCheck.includes(searchPattern)) {
+          results.push({
+            path: entryRelativePath,
+            type: 'folder'
+          });
+        }
+        
+        // Recursively search subdirectories if we haven't hit limits
+        if (currentDepth < maxDepth && results.length < maxResults) {
+          await searchFolders(entryPath, entryRelativePath, pattern, ignoreCase, includeHidden, ignoredFolders, results, maxResults, currentDepth + 1, maxDepth);
+        }
+      }
+    }
+  } catch (error) {
+    // Skip directories that can't be read
+  }
+}
+
+// Helper function to run ripgrep
+async function runRipgrep(args: string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const rg = spawn('rg', args, { cwd });
+    let stdout = '';
+    let stderr = '';
+
+    rg.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    rg.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    rg.on('close', (code) => {
+      if (code === 0 || code === 1) { // 1 means no matches found, which is ok
+        resolve(stdout);
+      } else {
+        reject(new Error(`ripgrep failed with code ${code}: ${stderr}`));
+      }
+    });
+
+    rg.on('error', (error) => {
+      reject(error);
+    });
+  });
+}
+
+// Fallback search function when ripgrep is not available
+async function fallbackSearch(args: any, searchPath: string): Promise<any> {
+  const results: Array<{ path: string; type: 'filename' | 'content' | 'folder'; line?: number; preview?: string }> = [];
+  
+  const searchInDirectory = async (dirPath: string, relativePath: string = '') => {
+    try {
+      const entries = await fs.readdir(dirPath, { withFileTypes: true });
+      
+      for (const entry of entries) {
+        const entryPath = path.join(dirPath, entry.name);
+        const entryRelativePath = path.join(relativePath, entry.name);
+        
+        // Skip hidden files if not included
+        if (!args.includeHidden && entry.name.startsWith('.')) continue;
+        
+        if (entry.isDirectory()) {
+          // Search folder names if requested
+          if (args.searchType === 'folders' || args.searchType === 'all') {
+            const searchPattern = args.ignoreCase ? args.pattern.toLowerCase() : args.pattern;
+            const folderToCheck = args.ignoreCase ? entry.name.toLowerCase() : entry.name;
+            
+            if (folderToCheck.includes(searchPattern)) {
+              results.push({
+                path: entryRelativePath,
+                type: 'folder'
+              });
+            }
+          }
+          
+          await searchInDirectory(entryPath, entryRelativePath);
+        } else if (entry.isFile()) {
+          // Filter by extension if specified
+          if (args.fileType) {
+            const ext = args.fileType.startsWith('.') ? args.fileType : `.${args.fileType}`;
+            if (!entry.name.endsWith(ext)) continue;
+          }
+          
+          // Search filename
+          if (args.searchType === 'files' || args.searchType === 'both' || args.searchType === 'all') {
+            const searchPattern = args.ignoreCase ? args.pattern.toLowerCase() : args.pattern;
+            const filename = args.ignoreCase ? entry.name.toLowerCase() : entry.name;
+            
+            if (filename.includes(searchPattern)) {
+              results.push({
+                path: entryRelativePath,
+                type: 'filename'
+              });
+            }
+          }
+          
+          // Search content if requested
+          if ((args.searchType === 'content' || args.searchType === 'both' || args.searchType === 'all') && results.length < (args.maxResults || 50)) {
+            try {
+              const content = await fs.readFile(entryPath, 'utf-8');
+              const lines = content.split('\n');
+              lines.forEach((line, index) => {
+                const searchPattern = args.ignoreCase ? args.pattern.toLowerCase() : args.pattern;
+                const lineToCheck = args.ignoreCase ? line.toLowerCase() : line;
+                
+                if (lineToCheck.includes(searchPattern)) {
+                  results.push({
+                    path: entryRelativePath,
+                    type: 'content',
+                    line: index + 1,
+                    preview: line.trim().substring(0, 100) + (line.length > 100 ? '...' : '')
+                  });
+                }
+              });
+            } catch {
+              // Skip files that can't be read as text
+            }
+          }
+        }
+      }
+    } catch (error) {
+      // Skip directories that can't be read
+    }
+  };
+  
+  await searchInDirectory(searchPath);
+  
+  return {
+    success: true,
+    pattern: args.pattern,
+    searchType: args.searchType || 'files',
+    searchPath: args.path || '.',
+    results: results.slice(0, args.maxResults || 50),
+    resultCount: results.length,
+    fallback: true
+  };
+}

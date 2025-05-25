@@ -29,6 +29,9 @@
   },
   "author": "Justine Chang <justinechang39@gmail.com>",
   "license": "ISC",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "description": "AI-powered CLI agent for file operations, CSV manipulation, todo management, and web content fetching using OpenRouter",
   "keywords": [
     "cli",

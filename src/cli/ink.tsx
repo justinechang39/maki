@@ -193,12 +193,19 @@ const App: React.FC<AppProps> = () => {
       case 'deleteFolder':
         return `Folder deleted: ${args.path}${args.recursive ? ' (recursive)' : ''}`;
       
-      case 'searchFiles':
+      case 'findFiles':
         const resultCount = result.resultCount || 0;
-        const resultPreview = result.results?.slice(0, 4).map((r: any) => 
-          `${r.type === 'filename' ? '📄' : '📝'} ${r.path}${r.line ? `:${r.line}` : ''}${r.preview ? ` - ${r.preview.substring(0, 50)}${r.preview.length > 50 ? '...' : ''}` : ''}`
-        ).join('\n') || '';
-        return `Found ${resultCount} matches for "${args.query}"\n${resultPreview}${resultCount > 4 ? `\n... and ${resultCount - 4} more matches` : ''}`;
+        const resultPreview = result.results?.slice(0, 4).map((r: any) => {
+          const icon = r.type === 'filename' ? '📄' : r.type === 'folder' ? '📁' : '📝';
+          return `${icon} ${r.path}${r.line ? `:${r.line}` : ''}${r.preview ? ` - ${r.preview.substring(0, 50)}${r.preview.length > 50 ? '...' : ''}` : ''}`;
+        }).join('\n') || '';
+        const searchTypeDesc = args.searchType === 'both' ? 'files & content' : 
+                             args.searchType === 'content' ? 'content' : 
+                             args.searchType === 'folders' ? 'folders' :
+                             args.searchType === 'all' ? 'files, folders & content' : 'files';
+        const searchPath = args.path ? ` in ${args.path}` : '';
+        const typeFilter = args.fileType ? ` (${args.fileType} files)` : '';
+        return `🔍 Found ${resultCount} ${searchTypeDesc} matches for "${args.pattern}"${searchPath}${typeFilter}${result.hasMore ? ' (limited)' : ''}\n${resultPreview}${resultCount > 4 ? `\n... and ${resultCount - 4} more matches` : ''}`;
       
       case 'getFileInfo':
         return `File info: ${result.path}\nType: ${result.type} | Size: ${result.size} bytes | Modified: ${new Date(result.modified).toLocaleDateString()}`;

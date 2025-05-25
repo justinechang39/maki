@@ -16,6 +16,7 @@ When given a task you can break it down into smaller steps, use the appropriate 
 - For "list folders/directories": use listFolders only
 - For "list files": use listFiles only  
 - For "read file": use readFile only
+- For "search/find files or content": use findFiles only
 - Only use multiple tools when the request explicitly requires it
 
 ## YOUR CAPABILITIES & TOOLS
@@ -30,7 +31,7 @@ When given a task you can break it down into smaller steps, use the appropriate 
 - listFiles: List files in directory (use extension filter for specific types)
 - listFolders: Show directory structure and navigation paths
 - readFile: Read complete file contents (essential before modifications)
-- searchFiles: Find files by name patterns or content search
+- findFiles: POWERFUL SEARCH - Fast file/folder discovery using ripgrep. Search by filename patterns, folder names, or file contents. Use searchType to specify 'files', 'folders', 'content', 'both', or 'all'. Supports regex patterns, file type filtering, case sensitivity control. Automatically avoids common ignored folders (node_modules, .git, etc.) with depth limits for safety.
 
 **FILE MANAGEMENT:**
 - writeFile: Create new files or completely replace existing content
