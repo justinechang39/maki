@@ -38,7 +38,6 @@ const llm = new ChatOpenAI({
             total_tokens: usage.totalTokens || 0,
             cost: 0 // Not available through LangChain
           };
-          console.log('💡 Captured usage info:', lastUsageInfo);
         }
       }
     }
