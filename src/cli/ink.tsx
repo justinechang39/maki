@@ -32,8 +32,6 @@ interface ThreadListItem {
   messageCount: number;
 }
 
-
-
 const App: React.FC<AppProps> = () => {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -52,6 +50,9 @@ const App: React.FC<AppProps> = () => {
   const isDeletingThreadRef = useRef(false);
   const { exit } = useApp();
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Create agent instance once and reuse it
+  const agentRef = useRef<any>(null);
 
   // Format tool results for better display - no need for useCallback, it's a pure function
   const formatToolResult = (toolName: string, args: any, result: any): string => {
@@ -218,9 +219,9 @@ const App: React.FC<AppProps> = () => {
     }
   };
 
-  // Load threads on mount
+  // Load threads and create agent on mount
   useEffect(() => {
-    const loadThreads = async () => {
+    const initializeApp = async () => {
       try {
         // Check if database exists, if not, create it with migration
         if (!fs.existsSync(DATABASE_PATH)) {
@@ -229,16 +230,21 @@ const App: React.FC<AppProps> = () => {
           // The database will be created automatically when Prisma connects
         }
         
+        // Create agent once on startup
+        if (!agentRef.current) {
+          agentRef.current = await createMakiAgent();
+        }
+        
         const threadList = await ThreadDatabase.getAllThreads();
         setThreads(threadList);
         setIsLoadingThreads(false);
       } catch (error) {
-        console.error('Failed to load threads:', error);
+        console.error('Failed to initialize app:', error);
         setIsLoadingThreads(false);
       }
     };
     
-    loadThreads();
+    initializeApp();
   }, []);
 
   // Cleanup timeouts on unmount
@@ -435,13 +441,40 @@ const App: React.FC<AppProps> = () => {
     }
 
     try {
-      // NEW: LangChain integration
-      const agent = await createMakiAgent();
+      // Use the pre-created agent instance
+      if (!agentRef.current) {
+        throw new Error('Agent not initialized');
+      }
+
       const chatHistory = createMemoryFromHistory(conversationHistory);
+      const response = await executeAgent(agentRef.current, trimmedInput, chatHistory);
 
-      const response = await executeAgent(agent, trimmedInput, chatHistory);
+      // Display tool calls if any occurred
+      if (response.intermediateSteps && response.intermediateSteps.length > 0) {
+        for (const step of response.intermediateSteps) {
+          if (step.action && step.observation) {
+            const toolName = step.action.tool;
+            const toolArgs = step.action.toolInput;
+            let toolResult;
+            
+            try {
+              toolResult = JSON.parse(step.observation);
+            } catch {
+              toolResult = { message: step.observation };
+            }
+            
+            const formattedResult = formatToolResult(toolName, toolArgs, toolResult);
+            
+            setMessages(prev => [...prev, {
+              role: 'assistant',
+              content: `🔧 **${toolName}**: ${formattedResult}`,
+              showToolCalls: false
+            } as DisplayMessage]);
+          }
+        }
+      }
 
-      // Keep existing UI updates
+      // Display assistant response
       if (response.output && response.output.trim()) {
         setMessages(prev => [...prev, {
           role: 'assistant',
@@ -450,7 +483,7 @@ const App: React.FC<AppProps> = () => {
         } as DisplayMessage]);
       }
 
-      // Keep database persistence
+      // Persist to database
       if (currentThreadId && response.output) {
         await ThreadDatabase.addMessage(currentThreadId, 'ASSISTANT', response.output);
       }

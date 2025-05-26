@@ -74,8 +74,9 @@ export async function createMakiAgent() {
     const agentExecutor = new AgentExecutor({
       agent,
       tools: langchainTools,
-      maxIterations: 5,
+      maxIterations: 10,
       verbose: false,
+      returnIntermediateSteps: true,
       handleParsingErrors: (error: Error) => {
         console.error('Agent parsing error:', error);
         return 'I encountered an error while processing your request. Please try rephrasing your question or breaking it down into smaller steps.';
@@ -89,19 +90,22 @@ export async function createMakiAgent() {
   }
 }
 
-// Execute agent with error handling
+// Execute agent with error handling and intermediate steps
 export async function executeAgent(
   agent: AgentExecutor, 
   input: string, 
   chatHistory: any[] = []
-): Promise<{ output: string; error?: string }> {
+): Promise<{ output: string; error?: string; intermediateSteps?: any[] }> {
   try {
     const result = await agent.invoke({
       input: input,
       chat_history: chatHistory || []
     });
 
-    return { output: result.output };
+    return { 
+      output: result.output,
+      intermediateSteps: result.intermediateSteps || []
+    };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     console.error('Agent execution error:', error);
