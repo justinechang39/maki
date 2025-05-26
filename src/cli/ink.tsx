@@ -15,6 +15,15 @@ import { SYSTEM_PROMPT } from '../core/system-prompt.js';
 import { DATABASE_PATH, OPENROUTER_API_KEY } from '../core/config.js';
 import fs from 'fs';
 
+// Helper function to format file sizes
+const formatBytes = (bytes: number): string => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
 interface AppProps {}
 
 interface ThreadListItem {
@@ -156,6 +165,49 @@ const App: React.FC<AppProps> = () => {
           return `🔗 Found ${linkCount} links on ${args.url}\n${summary}`;
         }
         return `❌ Link extraction failed: ${result.error || 'Unknown error'}`;
+      
+      case 'glob':
+        if (result.success) {
+          const resultCount = result.resultCount || 0;
+          const searchPath = result.searchPath || '.';
+          const pattern = result.pattern || args.pattern;
+          const hasMore = result.hasMore;
+          
+          // Format results based on whether they're objects or strings
+          const results = result.results || [];
+          let resultPreview = '';
+          
+          if (results.length > 0) {
+            const displayLimit = 8;
+            const itemsToShow = results.slice(0, displayLimit);
+            
+            resultPreview = itemsToShow.map((item: any) => {
+              if (typeof item === 'string') {
+                // Simple string path
+                return `📄 ${item}`;
+              } else if (item.path) {
+                // Object with metadata
+                const icon = item.dirent?.isDirectory() ? '📁' : '📄';
+                const sizeInfo = item.size ? ` (${item.sizeFormatted || formatBytes(item.size)})` : '';
+                return `${icon} ${item.path}${sizeInfo}`;
+              } else {
+                return `📄 ${JSON.stringify(item)}`;
+              }
+            }).join('\n');
+            
+            if (results.length > displayLimit) {
+              resultPreview += `\n... and ${results.length - displayLimit} more items`;
+            }
+          } else {
+            resultPreview = 'No matches found';
+          }
+          
+          const searchDesc = searchPath !== '.' ? ` in ${searchPath}` : '';
+          const moreIndicator = hasMore ? ' (results limited)' : '';
+          
+          return `🔍 Found ${resultCount} items matching "${pattern}"${searchDesc}${moreIndicator}\n${resultPreview}`;
+        }
+        return `❌ Glob search failed: ${result.error || 'Unknown error'}`;
       
       default:
         // Generic success message with result preview
