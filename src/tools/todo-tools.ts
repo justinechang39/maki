@@ -1,7 +1,6 @@
 import * as fs from 'fs/promises';
-import { WORKSPACE_DIRECTORY_NAME } from '../core/config.js';
-import { getSafeWorkspacePath } from '../core/utils.js';
 import type { Tool } from '../core/types.js';
+import { getSafeWorkspacePath } from '../core/utils.js';
 
 export const todoTools: Tool[] = [
   {
@@ -20,7 +19,11 @@ export const todoTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          content: { type: 'string', description: "Complete todo list content in Markdown format. Use '- [ ]' for pending, '- [x]' for completed, '- [/]' for in-progress tasks." }
+          content: {
+            type: 'string',
+            description:
+              "Complete todo list content in Markdown format. Use '- [ ]' for pending, '- [x]' for completed, '- [/]' for in-progress tasks."
+          }
         },
         required: ['content']
       }
@@ -34,13 +37,22 @@ export const todoTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          itemIndex: { type: 'number', description: 'Line number (1-based) of the task to update. Use readTodo first to see current line numbers.' },
+          itemIndex: {
+            type: 'number',
+            description:
+              'Line number (1-based) of the task to update. Use readTodo first to see current line numbers.'
+          },
           newStatus: {
             type: 'string',
-            description: 'Task status: "pending" ([ ]), "in_progress" ([/]), "completed" ([x]), "cancelled" ([~])',
+            description:
+              'Task status: "pending" ([ ]), "in_progress" ([/]), "completed" ([x]), "cancelled" ([~])',
             enum: ['pending', 'in_progress', 'completed', 'cancelled']
           },
-          newText: { type: 'string', description: 'Optional: Update task description. Leave blank to keep current text and only change status.' }
+          newText: {
+            type: 'string',
+            description:
+              'Optional: Update task description. Leave blank to keep current text and only change status.'
+          }
         },
         required: ['itemIndex', 'newStatus']
       }
@@ -48,7 +60,10 @@ export const todoTools: Tool[] = [
   }
 ];
 
-export const todoToolImplementations: Record<string, (args: any) => Promise<any>> = {
+export const todoToolImplementations: Record<
+  string,
+  (args: any) => Promise<any>
+> = {
   readTodo: async () => {
     try {
       const todoPath = getSafeWorkspacePath('todo.md');
@@ -57,7 +72,12 @@ export const todoToolImplementations: Record<string, (args: any) => Promise<any>
         const content = await fs.readFile(todoPath, 'utf-8');
         return { success: true, content, exists: true };
       } catch {
-        return { success: true, content: '', exists: false, message: "No 'todo.md' found. Use writeTodo to create one." };
+        return {
+          success: true,
+          content: '',
+          exists: false,
+          message: "No 'todo.md' found. Use writeTodo to create one."
+        };
       }
     } catch (error: any) {
       return { error: error.message };
@@ -74,7 +94,11 @@ export const todoToolImplementations: Record<string, (args: any) => Promise<any>
     }
   },
 
-  updateTodoItem: async (args: { itemIndex: number; newStatus: string; newText?: string }) => {
+  updateTodoItem: async (args: {
+    itemIndex: number;
+    newStatus: string;
+    newText?: string;
+  }) => {
     try {
       const todoPath = getSafeWorkspacePath('todo.md');
       let content;
@@ -86,25 +110,36 @@ export const todoToolImplementations: Record<string, (args: any) => Promise<any>
 
       const lines = content.split('\n');
       if (args.itemIndex < 1 || args.itemIndex > lines.length) {
-        return { error: `Invalid itemIndex. 'todo.md' has ${lines.length} lines.` };
+        return {
+          error: `Invalid itemIndex. 'todo.md' has ${lines.length} lines.`
+        };
       }
 
       const lineIndex = args.itemIndex - 1;
       const currentLine = lines[lineIndex];
 
       const statusMarkers: Record<string, string> = {
-        pending: '[ ]', in_progress: '[/]', completed: '[x]', cancelled: '[~]'
+        pending: '[ ]',
+        in_progress: '[/]',
+        completed: '[x]',
+        cancelled: '[~]'
       };
-      const marker = statusMarkers[args.newStatus as keyof typeof statusMarkers];
+      const marker =
+        statusMarkers[args.newStatus as keyof typeof statusMarkers];
       if (!marker) return { error: `Invalid newStatus: ${args.newStatus}` };
 
-      const textContent = args.newText !== undefined
-        ? args.newText
-        : currentLine.replace(/^\s*-\s*\[[ x/~]\]\s*/, '').trim();
+      const textContent =
+        args.newText !== undefined
+          ? args.newText
+          : currentLine.replace(/^\s*-\s*\[[ x/~]\]\s*/, '').trim();
 
       lines[lineIndex] = `- ${marker} ${textContent}`;
       await fs.writeFile(todoPath, lines.join('\n'), 'utf-8');
-      return { success: true, message: `Todo item ${args.itemIndex} updated.`, updatedLine: lines[lineIndex] };
+      return {
+        success: true,
+        message: `Todo item ${args.itemIndex} updated.`,
+        updatedLine: lines[lineIndex]
+      };
     } catch (error: any) {
       return { error: error.message };
     }

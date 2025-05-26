@@ -16,22 +16,27 @@ export function isSafeUrl(urlString: string): boolean {
     }
 
     // 2. Disallow localhost and loopback
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') {
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '[::1]'
+    ) {
       return false;
     }
 
     // 3. Disallow private IP ranges (IPv4 and IPv6 ULA)
-    if (/^10\./.test(hostname) ||
-        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname) ||
-        /^192\.168\./.test(hostname) ||
-        /^fd[0-9a-f]{2}:/i.test(hostname)
-       ) {
+    if (
+      /^10\./.test(hostname) ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname) ||
+      /^192\.168\./.test(hostname) ||
+      /^fd[0-9a-f]{2}:/i.test(hostname)
+    ) {
       return false;
     }
-    
+
     // 4. Disallow .local TLD (often used for mDNS/Bonjour on local networks)
     if (hostname.endsWith('.local')) {
-        return false;
+      return false;
     }
 
     return true;
@@ -46,7 +51,9 @@ export function isSafeUrl(urlString: string): boolean {
 export function getSafeWorkspacePath(userPath: string = '.'): string {
   const resolvedPath = path.resolve(WORKSPACE_DIRECTORY, userPath);
   if (!resolvedPath.startsWith(WORKSPACE_DIRECTORY)) {
-    throw new Error(`Path traversal attempt detected. Path must be within '${WORKSPACE_DIRECTORY_NAME}'.`);
+    throw new Error(
+      `Path traversal attempt detected. Path must be within '${WORKSPACE_DIRECTORY_NAME}'.`
+    );
   }
   return resolvedPath;
 }
@@ -82,19 +89,21 @@ export function validateConversationHistory(messages: Message[]): Message[] {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (message.role === 'assistant' && message.tool_calls) {
-      const hasUnanswered = message.tool_calls.some(call => unansweredCalls.has(call.id));
+      const hasUnanswered = message.tool_calls.some(call =>
+        unansweredCalls.has(call.id)
+      );
       if (hasUnanswered) {
         lastValidIndex = i;
         break;
       }
     }
   }
-  
+
   if (lastValidIndex < messages.length) {
-      if (lastValidIndex > 0 && messages[lastValidIndex -1].role === 'user') {
-          return messages.slice(0, lastValidIndex -1);
-      }
-      return messages.slice(0, lastValidIndex);
+    if (lastValidIndex > 0 && messages[lastValidIndex - 1].role === 'user') {
+      return messages.slice(0, lastValidIndex - 1);
+    }
+    return messages.slice(0, lastValidIndex);
   }
 
   return messages;

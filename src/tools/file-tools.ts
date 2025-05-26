@@ -1,9 +1,9 @@
+import fg from 'fast-glob';
 import * as fs from 'fs/promises';
 import path from 'path';
-import fg from 'fast-glob';
 import { WORKSPACE_DIRECTORY_NAME } from '../core/config.js'; // Assuming these exist
-import { getSafeWorkspacePath } from '../core/utils.js';   // Assuming these exist
-import type { Tool } from '../core/types.js';             // Assuming these exist
+import type { Tool } from '../core/types.js'; // Assuming these exist
+import { getSafeWorkspacePath } from '../core/utils.js'; // Assuming these exist
 
 const formatBytes = (bytes: number): string => {
   if (bytes === 0) return '0 B';
@@ -32,11 +32,13 @@ export const fileTools: Tool[] = [
             properties: {
               onlyFiles: {
                 type: 'boolean',
-                description: 'Return only files (default: true). Set false to include both files and directories.'
+                description:
+                  'Return only files (default: true). Set false to include both files and directories.'
               },
               onlyDirectories: {
-                type: 'boolean', 
-                description: 'Return only directories (default: false). Overrides onlyFiles if true.'
+                type: 'boolean',
+                description:
+                  'Return only directories (default: false). Overrides onlyFiles if true.'
               },
               cwd: {
                 type: 'string',
@@ -44,28 +46,34 @@ export const fileTools: Tool[] = [
               },
               deep: {
                 type: 'number',
-                description: 'Maximum search depth. Default: unlimited. Use 1 for immediate children only.'
+                description:
+                  'Maximum search depth. Default: unlimited. Use 1 for immediate children only.'
               },
               dot: {
                 type: 'boolean',
-                description: 'Include hidden files/directories (starting with .). Default: false.'
+                description:
+                  'Include hidden files/directories (starting with .). Default: false.'
               },
               absolute: {
                 type: 'boolean',
-                description: 'Return absolute file paths. Default: false (returns workspace-relative paths).'
+                description:
+                  'Return absolute file paths. Default: false (returns workspace-relative paths).'
               },
               objectMode: {
                 type: 'boolean',
-                description: 'Return rich objects with metadata instead of just path strings. Default: false. WARNING: Use sparingly as this creates verbose output.'
+                description:
+                  'Return rich objects with metadata instead of just path strings. Default: false. WARNING: Use sparingly as this creates verbose output.'
               },
               stats: {
                 type: 'boolean',
-                description: 'Include fs.Stats in results (slower but provides size, dates, etc.). Default: false. WARNING: Creates very verbose output, use only when file metadata is specifically needed.'
+                description:
+                  'Include fs.Stats in results (slower but provides size, dates, etc.). Default: false. WARNING: Creates very verbose output, use only when file metadata is specifically needed.'
               },
               ignore: {
                 type: 'array',
                 items: { type: 'string' },
-                description: 'Array of glob patterns to exclude from results. Example: ["node_modules/**", "*.log"]'
+                description:
+                  'Array of glob patterns to exclude from results. Example: ["node_modules/**", "*.log"]'
               },
               caseSensitive: {
                 type: 'boolean',
@@ -73,15 +81,18 @@ export const fileTools: Tool[] = [
               },
               maxResults: {
                 type: 'number',
-                description: 'Maximum number of results to return. Default: 100 to prevent context overflow. Set higher only when needed.'
+                description:
+                  'Maximum number of results to return. Default: 100 to prevent context overflow. Set higher only when needed.'
               },
               markDirectories: {
                 type: 'boolean',
-                description: 'Add trailing slash to directory paths for easy identification. Default: false.'
+                description:
+                  'Add trailing slash to directory paths for easy identification. Default: false.'
               },
               sizeOnly: {
                 type: 'boolean',
-                description: 'Return only path and size for files (much cleaner than full stats). Useful for filtering by file size. Default: false.'
+                description:
+                  'Return only path and size for files (much cleaner than full stats). Useful for filtering by file size. Default: false.'
               }
             }
           }
@@ -115,8 +126,15 @@ export const fileTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `Target file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Creates parent directories automatically if needed.` },
-          content: { type: 'string', description: 'Complete file content to write. This will replace any existing content entirely.' }
+          path: {
+            type: 'string',
+            description: `Target file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Creates parent directories automatically if needed.`
+          },
+          content: {
+            type: 'string',
+            description:
+              'Complete file content to write. This will replace any existing content entirely.'
+          }
         },
         required: ['path', 'content']
       }
@@ -130,15 +148,31 @@ export const fileTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `File path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}').` },
-          content: { type: 'string', description: 'New content to insert, replace with, or append. Can be multi-line.' },
+          path: {
+            type: 'string',
+            description: `File path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}').`
+          },
+          content: {
+            type: 'string',
+            description:
+              'New content to insert, replace with, or append. Can be multi-line.'
+          },
           operation: {
             type: 'string',
-            description: 'Edit operation: "replace" (substitute specific lines), "insert" (add before specified line), "append" (add to file end), "prepend" (add to file beginning)',
+            description:
+              'Edit operation: "replace" (substitute specific lines), "insert" (add before specified line), "append" (add to file end), "prepend" (add to file beginning)',
             enum: ['replace', 'insert', 'append', 'prepend']
           },
-          startLine: { type: 'number', description: 'Line number (1-based) where operation begins. Required for replace/insert operations. Use readFile first to identify correct line numbers.' },
-          endLine: { type: 'number', description: 'End line number (1-based, inclusive) for replace operations. Omit to replace only startLine.' }
+          startLine: {
+            type: 'number',
+            description:
+              'Line number (1-based) where operation begins. Required for replace/insert operations. Use readFile first to identify correct line numbers.'
+          },
+          endLine: {
+            type: 'number',
+            description:
+              'End line number (1-based, inclusive) for replace operations. Omit to replace only startLine.'
+          }
         },
         required: ['path', 'content', 'operation']
       }
@@ -152,7 +186,10 @@ export const fileTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `File path to delete within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). File must exist.` }
+          path: {
+            type: 'string',
+            description: `File path to delete within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). File must exist.`
+          }
         },
         required: ['path']
       }
@@ -166,7 +203,10 @@ export const fileTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `New folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Will create parent folders if needed.` }
+          path: {
+            type: 'string',
+            description: `New folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Will create parent folders if needed.`
+          }
         },
         required: ['path']
       }
@@ -180,8 +220,15 @@ export const fileTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `Folder path to delete within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing directory.` },
-          recursive: { type: 'boolean', description: 'TRUE: Delete folder and ALL contents (dangerous). FALSE: Only delete if empty (safer). Always consider carefully.' }
+          path: {
+            type: 'string',
+            description: `Folder path to delete within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing directory.`
+          },
+          recursive: {
+            type: 'boolean',
+            description:
+              'TRUE: Delete folder and ALL contents (dangerous). FALSE: Only delete if empty (safer). Always consider carefully.'
+          }
         },
         required: ['path']
       }
@@ -195,8 +242,14 @@ export const fileTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          oldPath: { type: 'string', description: `Current folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must exist.` },
-          newPath: { type: 'string', description: `New folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Will create parent folders if needed.` }
+          oldPath: {
+            type: 'string',
+            description: `Current folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must exist.`
+          },
+          newPath: {
+            type: 'string',
+            description: `New folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Will create parent folders if needed.`
+          }
         },
         required: ['oldPath', 'newPath']
       }
@@ -210,8 +263,14 @@ export const fileTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          oldPath: { type: 'string', description: `Current file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing file.` },
-          newPath: { type: 'string', description: `New file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Will create parent folders if needed.` }
+          oldPath: {
+            type: 'string',
+            description: `Current file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing file.`
+          },
+          newPath: {
+            type: 'string',
+            description: `New file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Will create parent folders if needed.`
+          }
         },
         required: ['oldPath', 'newPath']
       }
@@ -225,9 +284,19 @@ export const fileTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          sourcePath: { type: 'string', description: `Source file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing file.` },
-          destinationPath: { type: 'string', description: `Destination file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Will create parent folders if needed.` },
-          overwrite: { type: 'boolean', description: 'Whether to overwrite destination file if it exists. Default: false.' }
+          sourcePath: {
+            type: 'string',
+            description: `Source file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing file.`
+          },
+          destinationPath: {
+            type: 'string',
+            description: `Destination file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Will create parent folders if needed.`
+          },
+          overwrite: {
+            type: 'boolean',
+            description:
+              'Whether to overwrite destination file if it exists. Default: false.'
+          }
         },
         required: ['sourcePath', 'destinationPath']
       }
@@ -241,9 +310,19 @@ export const fileTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          sourcePath: { type: 'string', description: `Source folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing directory.` },
-          destinationPath: { type: 'string', description: `Destination folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Will create parent folders if needed.` },
-          overwrite: { type: 'boolean', description: 'Whether to overwrite destination folder if it exists. Default: false.' }
+          sourcePath: {
+            type: 'string',
+            description: `Source folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing directory.`
+          },
+          destinationPath: {
+            type: 'string',
+            description: `Destination folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Will create parent folders if needed.`
+          },
+          overwrite: {
+            type: 'boolean',
+            description:
+              'Whether to overwrite destination folder if it exists. Default: false.'
+          }
         },
         required: ['sourcePath', 'destinationPath']
       }
@@ -257,7 +336,10 @@ export const fileTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `File or folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must exist.` }
+          path: {
+            type: 'string',
+            description: `File or folder path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must exist.`
+          }
         },
         required: ['path']
       }
@@ -295,9 +377,12 @@ export const fileTools: Tool[] = [
   }
 ];
 
-export const fileToolImplementations: Record<string, (args: any) => Promise<any>> = {
-  glob: async (args: { 
-    pattern: string; 
+export const fileToolImplementations: Record<
+  string,
+  (args: any) => Promise<any>
+> = {
+  glob: async (args: {
+    pattern: string;
     options?: {
       onlyFiles?: boolean;
       onlyDirectories?: boolean;
@@ -312,17 +397,19 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
       maxResults?: number;
       markDirectories?: boolean;
       sizeOnly?: boolean;
-    }
+    };
   }) => {
     try {
       const opts = args.options || {};
       const workspacePath = getSafeWorkspacePath();
-      const searchPath = opts.cwd ? getSafeWorkspacePath(opts.cwd) : workspacePath;
+      const searchPath = opts.cwd
+        ? getSafeWorkspacePath(opts.cwd)
+        : workspacePath;
 
       // Configure fast-glob options with better defaults
       const fgOptions: fg.Options = {
         cwd: searchPath,
-        onlyFiles: opts.onlyDirectories ? false : (opts.onlyFiles !== false),
+        onlyFiles: opts.onlyDirectories ? false : opts.onlyFiles !== false,
         onlyDirectories: opts.onlyDirectories || false,
         deep: opts.deep,
         dot: opts.dot || false,
@@ -340,7 +427,10 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
       const defaultMaxResults = opts.maxResults || 100;
 
       // Execute the glob search
-      let results: string[] | fg.Entry[] | any[] = await fg(args.pattern, fgOptions);
+      let results: string[] | fg.Entry[] | any[] = await fg(
+        args.pattern,
+        fgOptions
+      );
 
       // Limit results to prevent context overflow
       if (results.length > defaultMaxResults) {
@@ -352,16 +442,21 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
         // Entry objects from fast-glob when objectMode is enabled
         results = (results as unknown as fg.Entry[]).map(entry => {
           // Clean up the dirent object to remove function references that can't be serialized
-          const cleanDirent = entry.dirent ? {
-            name: entry.dirent.name,
-            isFile: entry.dirent.isFile(),
-            isDirectory: entry.dirent.isDirectory(),
-            isSymbolicLink: entry.dirent.isSymbolicLink()
-          } : undefined;
+          const cleanDirent = entry.dirent
+            ? {
+                name: entry.dirent.name,
+                isFile: entry.dirent.isFile(),
+                isDirectory: entry.dirent.isDirectory(),
+                isSymbolicLink: entry.dirent.isSymbolicLink()
+              }
+            : undefined;
 
-          const finalPath = opts.absolute 
+          const finalPath = opts.absolute
             ? path.resolve(searchPath, entry.path)
-            : path.relative(workspacePath, path.resolve(searchPath, entry.path));
+            : path.relative(
+                workspacePath,
+                path.resolve(searchPath, entry.path)
+              );
 
           // Handle sizeOnly mode for cleaner output
           if (opts.sizeOnly && entry.stats) {
@@ -373,23 +468,25 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
           }
 
           // Clean up stats object to remove function references
-          const cleanStats = entry.stats ? {
-            dev: entry.stats.dev,
-            mode: entry.stats.mode,
-            nlink: entry.stats.nlink,
-            uid: entry.stats.uid,
-            gid: entry.stats.gid,
-            rdev: entry.stats.rdev,
-            blksize: entry.stats.blksize,
-            ino: entry.stats.ino,
-            size: entry.stats.size,
-            blocks: entry.stats.blocks,
-            atimeMs: entry.stats.atimeMs,
-            mtimeMs: entry.stats.mtimeMs,
-            ctimeMs: entry.stats.ctimeMs,
-            birthtimeMs: entry.stats.birthtimeMs,
-            sizeFormatted: formatBytes(entry.stats.size)
-          } : undefined;
+          const cleanStats = entry.stats
+            ? {
+                dev: entry.stats.dev,
+                mode: entry.stats.mode,
+                nlink: entry.stats.nlink,
+                uid: entry.stats.uid,
+                gid: entry.stats.gid,
+                rdev: entry.stats.rdev,
+                blksize: entry.stats.blksize,
+                ino: entry.stats.ino,
+                size: entry.stats.size,
+                blocks: entry.stats.blocks,
+                atimeMs: entry.stats.atimeMs,
+                mtimeMs: entry.stats.mtimeMs,
+                ctimeMs: entry.stats.ctimeMs,
+                birthtimeMs: entry.stats.birthtimeMs,
+                sizeFormatted: formatBytes(entry.stats.size)
+              }
+            : undefined;
 
           return {
             name: entry.name,
@@ -401,7 +498,9 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
       } else if (!opts.absolute) {
         // String results from fast-glob, convert to workspace-relative paths
         results = (results as string[]).map(resultPath => {
-          const absolutePath = path.isAbsolute(resultPath) ? resultPath : path.resolve(searchPath, resultPath);
+          const absolutePath = path.isAbsolute(resultPath)
+            ? resultPath
+            : path.resolve(searchPath, resultPath);
           return path.relative(workspacePath, absolutePath);
         });
       }
@@ -452,13 +551,22 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
       const safePath = getSafeWorkspacePath(args.path);
       await fs.mkdir(path.dirname(safePath), { recursive: true });
       await fs.writeFile(safePath, args.content, 'utf-8');
-      return { success: true, message: `File '${args.path}' written successfully.` };
+      return {
+        success: true,
+        message: `File '${args.path}' written successfully.`
+      };
     } catch (error: any) {
       return { error: `Failed to write file '${args.path}': ${error.message}` };
     }
   },
 
-  updateFile: async (args: { path: string; content: string; operation: 'replace' | 'insert' | 'append' | 'prepend'; startLine?: number; endLine?: number }) => {
+  updateFile: async (args: {
+    path: string;
+    content: string;
+    operation: 'replace' | 'insert' | 'append' | 'prepend';
+    startLine?: number;
+    endLine?: number;
+  }) => {
     try {
       const safePath = getSafeWorkspacePath(args.path);
       let existingContent = '';
@@ -470,7 +578,9 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
           if (args.operation === 'append' || args.operation === 'prepend') {
             existingContent = ''; // File will be created
           } else {
-            return { error: `File '${args.path}' does not exist. Cannot perform '${args.operation}' operation as it requires an existing file.` };
+            return {
+              error: `File '${args.path}' does not exist. Cannot perform '${args.operation}' operation as it requires an existing file.`
+            };
           }
         } else {
           throw readError; // Other read error
@@ -485,26 +595,36 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
           if (args.startLine === undefined) {
             return { error: 'startLine is required for replace operation.' };
           }
-          if (args.startLine < 1) { // Simplified: startLine must be at least 1
-             return { error: `Invalid startLine ${args.startLine}. Must be 1 or greater.`};
+          if (args.startLine < 1) {
+            // Simplified: startLine must be at least 1
+            return {
+              error: `Invalid startLine ${args.startLine}. Must be 1 or greater.`
+            };
           }
-          
+
           const endLine = args.endLine || args.startLine;
           if (endLine < args.startLine) {
-             return { error: `Invalid endLine ${endLine}. Must be >= startLine.`};
+            return {
+              error: `Invalid endLine ${endLine}. Must be >= startLine.`
+            };
           }
           // Allow startLine/endLine to go slightly beyond lines.length if replacing empty lines at end or effectively appending.
           // This logic can be complex. The core idea is to replace what's there.
           // If startLine > lines.length, it means we are "replacing" non-existent lines, which is like appending.
-          
+
           const newLines = args.content.split('\n');
-          if (args.startLine > lines.length) { // "Replacing" after the last actual line
-            while(lines.length < args.startLine -1) lines.push(''); // Pad with empty lines if needed
+          if (args.startLine > lines.length) {
+            // "Replacing" after the last actual line
+            while (lines.length < args.startLine - 1) lines.push(''); // Pad with empty lines if needed
             lines.push(...newLines);
           } else {
             // Ensure endLine does not go excessively beyond existing lines for replacement
             const actualEndLine = Math.min(endLine, lines.length);
-            lines.splice(args.startLine - 1, actualEndLine - (args.startLine - 1), ...newLines);
+            lines.splice(
+              args.startLine - 1,
+              actualEndLine - (args.startLine - 1),
+              ...newLines
+            );
           }
           newContent = lines.join('\n');
           break;
@@ -513,21 +633,36 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
           if (args.startLine === undefined) {
             return { error: 'startLine is required for insert operation.' };
           }
-          if (args.startLine < 1 || args.startLine > lines.length + 1) { // Can insert at line after last line
-            return { error: `Invalid startLine ${args.startLine}. Valid range is 1 to ${lines.length + 1}.` };
+          if (args.startLine < 1 || args.startLine > lines.length + 1) {
+            // Can insert at line after last line
+            return {
+              error: `Invalid startLine ${
+                args.startLine
+              }. Valid range is 1 to ${lines.length + 1}.`
+            };
           }
-          
+
           const insertLines = args.content.split('\n');
           lines.splice(args.startLine - 1, 0, ...insertLines);
           newContent = lines.join('\n');
           break;
 
         case 'append':
-          newContent = existingContent + (existingContent && !existingContent.endsWith('\n') && args.content ? '\n' : '') + args.content;
+          newContent =
+            existingContent +
+            (existingContent && !existingContent.endsWith('\n') && args.content
+              ? '\n'
+              : '') +
+            args.content;
           break;
 
         case 'prepend':
-          newContent = args.content + (args.content && !args.content.endsWith('\n') && existingContent ? '\n' : '') + existingContent;
+          newContent =
+            args.content +
+            (args.content && !args.content.endsWith('\n') && existingContent
+              ? '\n'
+              : '') +
+            existingContent;
           break;
 
         default:
@@ -536,22 +671,26 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
 
       await fs.mkdir(path.dirname(safePath), { recursive: true });
       await fs.writeFile(safePath, newContent, 'utf-8');
-      
-      const operationDesc = args.operation === 'replace' 
-        ? `replaced lines ${args.startLine}-${args.endLine || args.startLine}`
-        : args.operation === 'insert'
-        ? `inserted content at line ${args.startLine}`
-        : `${args.operation}ed content`;
-        
-      return { 
-        success: true, 
+
+      const operationDesc =
+        args.operation === 'replace'
+          ? `replaced lines ${args.startLine}-${args.endLine || args.startLine}`
+          : args.operation === 'insert'
+          ? `inserted content at line ${args.startLine}`
+          : `${args.operation}ed content`;
+
+      return {
+        success: true,
         message: `File '${args.path}' updated successfully (${operationDesc}).`,
-        linesAffected: args.operation === 'replace' 
-          ? (args.endLine || args.startLine!) - args.startLine! + 1 
-          : args.content.split('\n').length
+        linesAffected:
+          args.operation === 'replace'
+            ? (args.endLine || args.startLine!) - args.startLine! + 1
+            : args.content.split('\n').length
       };
     } catch (error: any) {
-      return { error: `Failed to update file '${args.path}': ${error.message}` };
+      return {
+        error: `Failed to update file '${args.path}': ${error.message}`
+      };
     }
   },
 
@@ -559,9 +698,14 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
     try {
       const safePath = getSafeWorkspacePath(args.path);
       await fs.unlink(safePath);
-      return { success: true, message: `File '${args.path}' deleted successfully.` };
+      return {
+        success: true,
+        message: `File '${args.path}' deleted successfully.`
+      };
     } catch (error: any) {
-      return { error: `Failed to delete file '${args.path}': ${error.message}` };
+      return {
+        error: `Failed to delete file '${args.path}': ${error.message}`
+      };
     }
   },
 
@@ -569,19 +713,32 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
     try {
       const safePath = getSafeWorkspacePath(args.path);
       await fs.mkdir(safePath, { recursive: true });
-      return { success: true, message: `Folder '${args.path}' created successfully.` };
+      return {
+        success: true,
+        message: `Folder '${args.path}' created successfully.`
+      };
     } catch (error: any) {
-      return { error: `Failed to create folder '${args.path}': ${error.message}` };
+      return {
+        error: `Failed to create folder '${args.path}': ${error.message}`
+      };
     }
   },
 
   deleteFolder: async (args: { path: string; recursive?: boolean }) => {
     try {
       const safePath = getSafeWorkspacePath(args.path);
-      await fs.rm(safePath, { recursive: !!args.recursive, force: !!args.recursive });
-      return { success: true, message: `Folder '${args.path}' deleted successfully.` };
+      await fs.rm(safePath, {
+        recursive: !!args.recursive,
+        force: !!args.recursive
+      });
+      return {
+        success: true,
+        message: `Folder '${args.path}' deleted successfully.`
+      };
     } catch (error: any) {
-      return { error: `Failed to delete folder '${args.path}': ${error.message}` };
+      return {
+        error: `Failed to delete folder '${args.path}': ${error.message}`
+      };
     }
   },
 
@@ -591,9 +748,14 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
       const safeNewPath = getSafeWorkspacePath(args.newPath);
       await fs.mkdir(path.dirname(safeNewPath), { recursive: true });
       await fs.rename(safeOldPath, safeNewPath);
-      return { success: true, message: `Folder renamed from '${args.oldPath}' to '${args.newPath}'.` };
+      return {
+        success: true,
+        message: `Folder renamed from '${args.oldPath}' to '${args.newPath}'.`
+      };
     } catch (error: any) {
-      return { error: `Failed to rename folder '${args.oldPath}': ${error.message}` };
+      return {
+        error: `Failed to rename folder '${args.oldPath}': ${error.message}`
+      };
     }
   },
 
@@ -603,45 +765,71 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
       const safeNewPath = getSafeWorkspacePath(args.newPath);
       await fs.mkdir(path.dirname(safeNewPath), { recursive: true });
       await fs.rename(safeOldPath, safeNewPath);
-      return { success: true, message: `File renamed from '${args.oldPath}' to '${args.newPath}'.` };
+      return {
+        success: true,
+        message: `File renamed from '${args.oldPath}' to '${args.newPath}'.`
+      };
     } catch (error: any) {
-      return { error: `Failed to rename file '${args.oldPath}': ${error.message}` };
+      return {
+        error: `Failed to rename file '${args.oldPath}': ${error.message}`
+      };
     }
   },
 
-  copyFile: async (args: { sourcePath: string; destinationPath: string; overwrite?: boolean }) => {
+  copyFile: async (args: {
+    sourcePath: string;
+    destinationPath: string;
+    overwrite?: boolean;
+  }) => {
     try {
       const safeSrcPath = getSafeWorkspacePath(args.sourcePath);
       const safeDestPath = getSafeWorkspacePath(args.destinationPath);
-      
+
       try {
         await fs.access(safeDestPath);
         if (!args.overwrite) {
-          return { error: `Destination file '${args.destinationPath}' already exists. Use overwrite=true to replace.` };
+          return {
+            error: `Destination file '${args.destinationPath}' already exists. Use overwrite=true to replace.`
+          };
         }
-      } catch { /* File doesn't exist, proceed */ }
-      
+      } catch {
+        /* File doesn't exist, proceed */
+      }
+
       await fs.mkdir(path.dirname(safeDestPath), { recursive: true });
       await fs.copyFile(safeSrcPath, safeDestPath);
-      return { success: true, message: `File copied from '${args.sourcePath}' to '${args.destinationPath}'.` };
+      return {
+        success: true,
+        message: `File copied from '${args.sourcePath}' to '${args.destinationPath}'.`
+      };
     } catch (error: any) {
-      return { error: `Failed to copy file '${args.sourcePath}': ${error.message}` };
+      return {
+        error: `Failed to copy file '${args.sourcePath}': ${error.message}`
+      };
     }
   },
 
-  copyFolder: async (args: { sourcePath: string; destinationPath: string; overwrite?: boolean }) => {
+  copyFolder: async (args: {
+    sourcePath: string;
+    destinationPath: string;
+    overwrite?: boolean;
+  }) => {
     try {
       const safeSrcPath = getSafeWorkspacePath(args.sourcePath);
       const safeDestPath = getSafeWorkspacePath(args.destinationPath);
-      
+
       try {
         await fs.access(safeDestPath);
         if (!args.overwrite) {
-          return { error: `Destination folder '${args.destinationPath}' already exists. Use overwrite=true to replace.` };
+          return {
+            error: `Destination folder '${args.destinationPath}' already exists. Use overwrite=true to replace.`
+          };
         }
         await fs.rm(safeDestPath, { recursive: true, force: true });
-      } catch { /* Folder doesn't exist, proceed */ }
-      
+      } catch {
+        /* Folder doesn't exist, proceed */
+      }
+
       // fs.cp needs the destination parent to exist, but not the destination itself if it's a directory copy.
       // If safeDestPath is 'a/b/c' and we are copying a folder 'src_folder' to 'a/b/c', then 'a/b' must exist.
       // If 'c' exists and is a file, fs.cp errors. If 'c' exists and is a dir, fs.cp copies *into* it.
@@ -649,9 +837,14 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
       // So, now we ensure parent of safeDestPath exists.
       await fs.mkdir(path.dirname(safeDestPath), { recursive: true });
       await fs.cp(safeSrcPath, safeDestPath, { recursive: true });
-      return { success: true, message: `Folder copied from '${args.sourcePath}' to '${args.destinationPath}'.` };
+      return {
+        success: true,
+        message: `Folder copied from '${args.sourcePath}' to '${args.destinationPath}'.`
+      };
     } catch (error: any) {
-      return { error: `Failed to copy folder '${args.sourcePath}': ${error.message}` };
+      return {
+        error: `Failed to copy folder '${args.sourcePath}': ${error.message}`
+      };
     }
   },
 
@@ -659,13 +852,17 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
     try {
       const safePath = getSafeWorkspacePath(args.path);
       const stats = await fs.stat(safePath);
-      
+
       return {
         success: true,
         path: args.path,
         size: stats.size,
         sizeFormatted: formatBytes(stats.size),
-        type: stats.isFile() ? 'file' : stats.isDirectory() ? 'directory' : 'other',
+        type: stats.isFile()
+          ? 'file'
+          : stats.isDirectory()
+          ? 'directory'
+          : 'other',
         created: stats.birthtime.toISOString(),
         modified: stats.mtime.toISOString(),
         accessed: stats.atime.toISOString(),
@@ -677,7 +874,9 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
         }
       };
     } catch (error: any) {
-      return { error: `Failed to get info for '${args.path}': ${error.message}` };
+      return {
+        error: `Failed to get info for '${args.path}': ${error.message}`
+      };
     }
   },
 
@@ -685,23 +884,27 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
     try {
       const results = [];
       let totalSize = 0;
-      
+
       for (const filePath of args.paths) {
         try {
           const safePath = getSafeWorkspacePath(filePath);
           const stats = await fs.stat(safePath);
-          
+
           if (!stats.isFile()) {
             results.push({ path: filePath, error: 'Not a file' });
           } else {
-            results.push({ path: filePath, size: stats.size, sizeFormatted: formatBytes(stats.size) });
+            results.push({
+              path: filePath,
+              size: stats.size,
+              sizeFormatted: formatBytes(stats.size)
+            });
             totalSize += stats.size;
           }
         } catch (error: any) {
           results.push({ path: filePath, error: error.message });
         }
       }
-      
+
       return {
         success: true,
         files: results,
@@ -711,24 +914,28 @@ export const fileToolImplementations: Record<string, (args: any) => Promise<any>
         successCount: results.filter(r => !r.error).length
       };
     } catch (error: any) {
-      return { error: `An unexpected error occurred while getting file sizes: ${error.message}` };
+      return {
+        error: `An unexpected error occurred while getting file sizes: ${error.message}`
+      };
     }
   },
 
   getCurrentDirectory: async () => {
     try {
-      const workspaceRootPath = getSafeWorkspacePath(); 
+      const workspaceRootPath = getSafeWorkspacePath();
       const workspaceName = path.basename(workspaceRootPath);
-      
+
       return {
         success: true,
         workspaceName: workspaceName,
-        workspaceRootConstant: WORKSPACE_DIRECTORY_NAME, 
+        workspaceRootConstant: WORKSPACE_DIRECTORY_NAME,
         absoluteWorkspacePath: workspaceRootPath,
         message: `The primary workspace is '${workspaceName}'. All tool paths are relative to this root: '${workspaceRootPath}'. The constant name for the workspace dir is '${WORKSPACE_DIRECTORY_NAME}'.`
       };
     } catch (error: any) {
-      return { error: `Failed to get workspace directory information: ${error.message}` };
+      return {
+        error: `Failed to get workspace directory information: ${error.message}`
+      };
     }
   }
 };

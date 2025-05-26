@@ -1,25 +1,28 @@
-import { isSafeUrl, getSafeWorkspacePath } from '../core/utils.js';
-import { WORKSPACE_DIRECTORY_NAME } from '../core/config.js';
-import type { Tool } from '../core/types.js';
 import fs from 'fs';
 import path from 'path';
+import { WORKSPACE_DIRECTORY_NAME } from '../core/config.js';
+import type { Tool } from '../core/types.js';
+import { getSafeWorkspacePath, isSafeUrl } from '../core/utils.js';
 
 export const webTools: Tool[] = [
   {
     type: 'function',
     function: {
       name: 'fetchWebsiteContent',
-      description: 'EXTERNAL DATA RETRIEVAL: Fetch content from public websites for research, analysis, or data collection. Returns raw HTML/text content that you can parse and extract information from. Use for gathering external data, checking APIs, or retrieving reference materials. Cannot access private/internal networks.',
+      description:
+        'EXTERNAL DATA RETRIEVAL: Fetch content from public websites for research, analysis, or data collection. Returns raw HTML/text content that you can parse and extract information from. Use for gathering external data, checking APIs, or retrieving reference materials. Cannot access private/internal networks.',
       parameters: {
         type: 'object',
         properties: {
           url: {
             type: 'string',
-            description: 'Public HTTP/HTTPS URL to fetch (e.g., "https://api.example.com/data", "https://docs.example.com"). Must be fully qualified URL starting with http:// or https://'
+            description:
+              'Public HTTP/HTTPS URL to fetch (e.g., "https://api.example.com/data", "https://docs.example.com"). Must be fully qualified URL starting with http:// or https://'
           },
           maxLength: {
             type: 'number',
-            description: 'Content length limit in characters. Default: 10,000. Range: 100-50,000. Larger values for complete documents, smaller for quick checks.'
+            description:
+              'Content length limit in characters. Default: 10,000. Range: 100-50,000. Larger values for complete documents, smaller for quick checks.'
           }
         },
         required: ['url']
@@ -30,17 +33,20 @@ export const webTools: Tool[] = [
     type: 'function',
     function: {
       name: 'downloadFile',
-      description: 'EXTERNAL FILE DOWNLOAD: Download files from public URLs to the local workspace. Supports various file types including images, documents, archives, etc. Shows download progress and saves to specified location.',
+      description:
+        'EXTERNAL FILE DOWNLOAD: Download files from public URLs to the local workspace. Supports various file types including images, documents, archives, etc. Shows download progress and saves to specified location.',
       parameters: {
         type: 'object',
         properties: {
           url: {
             type: 'string',
-            description: 'Public HTTP/HTTPS URL of the file to download (e.g., "https://example.com/file.pdf", "https://api.example.com/data.json"). Must be fully qualified URL starting with http:// or https://'
+            description:
+              'Public HTTP/HTTPS URL of the file to download (e.g., "https://example.com/file.pdf", "https://api.example.com/data.json"). Must be fully qualified URL starting with http:// or https://'
           },
           filename: {
             type: 'string',
-            description: 'Optional filename to save as. If not provided, will extract from URL or generate one. Include file extension (e.g., "document.pdf", "data.json")'
+            description:
+              'Optional filename to save as. If not provided, will extract from URL or generate one. Include file extension (e.g., "document.pdf", "data.json")'
           },
           directory: {
             type: 'string',
@@ -55,13 +61,15 @@ export const webTools: Tool[] = [
     type: 'function',
     function: {
       name: 'checkUrlStatus',
-      description: 'WEB UTILITY: Check if a URL is accessible and get basic information like status code, content type, and response headers. Useful for validating links before downloading or fetching content.',
+      description:
+        'WEB UTILITY: Check if a URL is accessible and get basic information like status code, content type, and response headers. Useful for validating links before downloading or fetching content.',
       parameters: {
         type: 'object',
         properties: {
           url: {
             type: 'string',
-            description: 'Public HTTP/HTTPS URL to check (e.g., "https://example.com/api", "https://example.com/file.pdf")'
+            description:
+              'Public HTTP/HTTPS URL to check (e.g., "https://example.com/api", "https://example.com/file.pdf")'
           }
         },
         required: ['url']
@@ -72,7 +80,8 @@ export const webTools: Tool[] = [
     type: 'function',
     function: {
       name: 'extractLinksFromPage',
-      description: 'WEB ANALYSIS: Extract all links from a webpage. Returns a list of URLs found on the page, categorized by type (internal, external, files, etc.). Useful for web scraping and site analysis.',
+      description:
+        'WEB ANALYSIS: Extract all links from a webpage. Returns a list of URLs found on the page, categorized by type (internal, external, files, etc.). Useful for web scraping and site analysis.',
       parameters: {
         type: 'object',
         properties: {
@@ -83,7 +92,8 @@ export const webTools: Tool[] = [
           linkTypes: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Types of links to extract: "internal", "external", "files", "images", "all". Default: ["all"]'
+            description:
+              'Types of links to extract: "internal", "external", "files", "images", "all". Default: ["all"]'
           }
         },
         required: ['url']
@@ -92,10 +102,13 @@ export const webTools: Tool[] = [
   }
 ];
 
-export const webToolImplementations: Record<string, (args: any) => Promise<any>> = {
+export const webToolImplementations: Record<
+  string,
+  (args: any) => Promise<any>
+> = {
   fetchWebsiteContent: async (args: { url: string; maxLength?: number }) => {
-    let { url, maxLength = 10000 } = args; 
-    maxLength = Math.max(100, Math.min(maxLength, 50000)); 
+    let { url, maxLength = 10000 } = args;
+    maxLength = Math.max(100, Math.min(maxLength, 50000));
 
     if (!isSafeUrl(url)) {
       const reason = `Invalid or disallowed URL: ${url}. Must be a public HTTP/HTTPS URL and not point to local or private network resources.`;
@@ -104,13 +117,14 @@ export const webToolImplementations: Record<string, (args: any) => Promise<any>>
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); 
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
       const response = await fetch(url, {
         signal: controller.signal,
         headers: {
           'User-Agent': 'FileAssistantCLI-Agent/1.0 (AI Agent)',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7'
+          Accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7'
         }
       });
       clearTimeout(timeoutId);
@@ -135,16 +149,25 @@ export const webToolImplementations: Record<string, (args: any) => Promise<any>>
         content: textContent,
         message
       };
-
     } catch (error: any) {
       if (error.name === 'AbortError') {
         return { error: `Request to ${url} timed out after 15 seconds.` };
       }
-      return { error: `Error fetching URL ${url}: ${error.message}. Check server logs for details.` };
+      return {
+        error: `Error fetching URL ${url}: ${error.message}. Check server logs for details.`
+      };
     }
   },
 
-  downloadFile: async (args: { url: string; filename?: string; directory?: string }, progressCallback?: (progress: number, downloadedSize: number, totalSize: number, speed: number) => void) => {
+  downloadFile: async (
+    args: { url: string; filename?: string; directory?: string },
+    progressCallback?: (
+      progress: number,
+      downloadedSize: number,
+      totalSize: number,
+      speed: number
+    ) => void
+  ) => {
     const { url, filename, directory = 'downloads' } = args;
 
     if (!isSafeUrl(url)) {
@@ -155,7 +178,7 @@ export const webToolImplementations: Record<string, (args: any) => Promise<any>>
     try {
       // Create downloads directory if it doesn't exist
       const downloadDir = getSafeWorkspacePath(directory);
-      
+
       if (!fs.existsSync(downloadDir)) {
         fs.mkdirSync(downloadDir, { recursive: true });
       }
@@ -165,7 +188,7 @@ export const webToolImplementations: Record<string, (args: any) => Promise<any>>
       if (!finalFilename) {
         const urlPath = new URL(url).pathname;
         finalFilename = path.basename(urlPath) || `download_${Date.now()}`;
-        
+
         // If no extension, try to get from content-type later
         if (!path.extname(finalFilename)) {
           finalFilename += '.bin';
@@ -199,7 +222,11 @@ export const webToolImplementations: Record<string, (args: any) => Promise<any>>
       const contentType = response.headers.get('content-type') || 'unknown';
 
       // Update filename extension based on content-type if needed
-      if (!filename && !path.extname(finalFilename) && contentType !== 'unknown') {
+      if (
+        !filename &&
+        !path.extname(finalFilename) &&
+        contentType !== 'unknown'
+      ) {
         const ext = getExtensionFromContentType(contentType);
         if (ext) {
           finalFilename = finalFilename.replace('.bin', ext);
@@ -221,29 +248,31 @@ export const webToolImplementations: Record<string, (args: any) => Promise<any>>
 
       // Convert ReadableStream to Node.js stream and track progress
       const reader = response.body.getReader();
-      
+
       while (true) {
         const { done, value } = await reader.read();
-        
+
         if (done) break;
-        
+
         fileStream.write(value);
         downloadedSize += value.length;
-        
+
         // Calculate speed and progress
         const now = Date.now();
         const timeDiff = now - lastUpdateTime;
-        
-        if (timeDiff >= 500) { // Update every 500ms
+
+        if (timeDiff >= 500) {
+          // Update every 500ms
           const sizeDiff = downloadedSize - lastDownloadedSize;
           const speed = timeDiff > 0 ? (sizeDiff / timeDiff) * 1000 : 0; // bytes per second
-          const progress = totalSize > 0 ? (downloadedSize / totalSize) * 100 : 0;
-          
+          const progress =
+            totalSize > 0 ? (downloadedSize / totalSize) * 100 : 0;
+
           // Call progress callback if provided
           if (progressCallback) {
             progressCallback(progress, downloadedSize, totalSize, speed);
           }
-          
+
           lastUpdateTime = now;
           lastDownloadedSize = downloadedSize;
         }
@@ -258,7 +287,7 @@ export const webToolImplementations: Record<string, (args: any) => Promise<any>>
       });
 
       const stats = fs.statSync(filePath);
-      
+
       return {
         success: true,
         url,
@@ -272,9 +301,10 @@ export const webToolImplementations: Record<string, (args: any) => Promise<any>>
           totalSize: stats.size,
           progress: 100
         },
-        message: `📥 Successfully downloaded ${finalFilename} (${formatBytes(stats.size)}) to ${path.relative(getSafeWorkspacePath(), filePath)}`
+        message: `📥 Successfully downloaded ${finalFilename} (${formatBytes(
+          stats.size
+        )}) to ${path.relative(getSafeWorkspacePath(), filePath)}`
       };
-
     } catch (error: any) {
       if (error.name === 'AbortError') {
         return { error: `Download of ${url} timed out after 2 minutes.` };
@@ -319,18 +349,19 @@ export const webToolImplementations: Record<string, (args: any) => Promise<any>>
         contentLength: response.headers.get('content-length') || 'unknown',
         lastModified: response.headers.get('last-modified') || 'unknown',
         headers,
-        message: `URL is ${response.ok ? 'accessible' : 'not accessible'} (${response.status} ${response.statusText})`
+        message: `URL is ${response.ok ? 'accessible' : 'not accessible'} (${
+          response.status
+        } ${response.statusText})`
       };
-
     } catch (error: any) {
       if (error.name === 'AbortError') {
         return { error: `Request to ${url} timed out after 10 seconds.` };
       }
-      return { 
+      return {
         success: false,
         url,
         accessible: false,
-        error: `Error checking URL ${url}: ${error.message}` 
+        error: `Error checking URL ${url}: ${error.message}`
       };
     }
   },
@@ -348,7 +379,8 @@ export const webToolImplementations: Record<string, (args: any) => Promise<any>>
       const response = await fetch(url, {
         headers: {
           'User-Agent': 'FileAssistantCLI-Agent/1.0 (AI Agent)',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+          Accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
         }
       });
 
@@ -362,7 +394,7 @@ export const webToolImplementations: Record<string, (args: any) => Promise<any>>
 
       const html = await response.text();
       const baseUrl = new URL(url);
-      
+
       // Extract links using regex (simple approach, could be enhanced with proper HTML parser)
       const linkRegex = /href\s*=\s*["']([^"']+)["']/gi;
       const links: string[] = [];
@@ -380,17 +412,28 @@ export const webToolImplementations: Record<string, (args: any) => Promise<any>>
       // Categorize links
       const categorizedLinks = {
         all: [...new Set(links)], // Remove duplicates
-        internal: links.filter(link => new URL(link).hostname === baseUrl.hostname),
-        external: links.filter(link => new URL(link).hostname !== baseUrl.hostname),
-        files: links.filter(link => /\.(pdf|doc|docx|xls|xlsx|zip|rar|tar|gz|jpg|jpeg|png|gif|svg|mp4|mp3|avi)$/i.test(link)),
-        images: links.filter(link => /\.(jpg|jpeg|png|gif|svg|webp|bmp|ico)$/i.test(link))
+        internal: links.filter(
+          link => new URL(link).hostname === baseUrl.hostname
+        ),
+        external: links.filter(
+          link => new URL(link).hostname !== baseUrl.hostname
+        ),
+        files: links.filter(link =>
+          /\.(pdf|doc|docx|xls|xlsx|zip|rar|tar|gz|jpg|jpeg|png|gif|svg|mp4|mp3|avi)$/i.test(
+            link
+          )
+        ),
+        images: links.filter(link =>
+          /\.(jpg|jpeg|png|gif|svg|webp|bmp|ico)$/i.test(link)
+        )
       };
 
       // Filter by requested link types
       const result: Record<string, string[]> = {};
       for (const type of linkTypes) {
         if (type in categorizedLinks) {
-          result[type] = categorizedLinks[type as keyof typeof categorizedLinks];
+          result[type] =
+            categorizedLinks[type as keyof typeof categorizedLinks];
         }
       }
 
@@ -402,7 +445,6 @@ export const webToolImplementations: Record<string, (args: any) => Promise<any>>
         totalFound: categorizedLinks.all.length,
         message: `Found ${categorizedLinks.all.length} unique links on ${url}`
       };
-
     } catch (error: any) {
       return { error: `Error extracting links from ${url}: ${error.message}` };
     }
@@ -427,17 +469,17 @@ function getExtensionFromContentType(contentType: string): string | null {
     'video/mp4': '.mp4',
     'audio/mpeg': '.mp3'
   };
-  
+
   const baseType = contentType.split(';')[0].trim();
   return typeMap[baseType] || null;
 }
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 Bytes';
-  
+
   const k = 1024;
   const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  
+
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }

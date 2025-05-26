@@ -1,4 +1,8 @@
-import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+import {
+  AIMessage,
+  HumanMessage,
+  SystemMessage
+} from '@langchain/core/messages';
 import type { Message } from './types.js';
 
 export const createMemoryFromHistory = (conversationHistory: Message[]) => {
