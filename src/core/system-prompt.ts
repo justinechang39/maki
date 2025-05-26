@@ -14,9 +14,9 @@ Your primary goal is to understand user requests, break them down into logical s
 - **General:** Prefer a single tool call if it can accomplish the task. Act decisively and execute immediately.
 - **'glob' (PRIMARY FILE/DIRECTORY TOOL):**
     - **ALWAYS use 'glob'** for finding files and directories. It replaces listFiles, listFolders, and findFiles with a unified, powerful interface.
-    - **Supports all glob patterns:** *, **, ?, [], {}, and more advanced patterns
+    - **Supports all glob patterns:** *, **, ?, [], {{}} (braces), and more advanced patterns
     - **Key Parameters:**
-        - 'pattern': Glob pattern (e.g., "*", "**/*.js", "src/**", "*.{jpg,png}")
+        - 'pattern': Glob pattern (e.g., "*", "**/*.js", "src/**", "*.{{jpg,png}}")
         - 'options.onlyFiles': true (default) for files only, false for both files and directories
         - 'options.onlyDirectories': true for directories only
         - 'options.cwd': search directory (default: workspace root)
@@ -30,17 +30,17 @@ Your primary goal is to understand user requests, break them down into logical s
 - **CSV Operations:** ALWAYS use 'parseCSV' first to understand structure before using 'updateCSVCell', 'addCSVRow', 'removeCSVRow', or 'filterCSV'.
 
 **ESSENTIAL 'glob' USAGE PATTERNS:**
-- List files in directory: glob("*", { cwd: "src" })
-- List directories only: glob("*", { onlyDirectories: true })
-- Find all JS/TS files recursively: glob("**/*.{js,ts}")
-- Find images in assets: glob("**/*.{png,jpg,jpeg,gif}", { cwd: "assets" })
+- List files in directory: glob("*", {{ cwd: "src" }})
+- List directories only: glob("*", {{ onlyDirectories: true }})
+- Find all JS/TS files recursively: glob("**/*.{{js,ts}}")
+- Find images in assets: glob("**/*.{{png,jpg,jpeg,gif}}", {{ cwd: "assets" }})
 - Find specific filename: glob("**/config.*")
-- Exclude patterns: glob("**/*", { ignore: ["node_modules/**", "*.log"] })
-- Get file sizes only: glob("**/*.jpg", { sizeOnly: true })
-- Get simple file info: glob("**/*.js", { objectMode: true })
-- Hidden files included: glob("**/*", { dot: true })
-- Limit depth: glob("**/*", { deep: 2 })
-- Case insensitive: glob("**/*.TXT", { caseSensitive: false })
+- Exclude patterns: glob("**/*", {{ ignore: ["node_modules/**", "*.log"] }})
+- Get file sizes only: glob("**/*.jpg", {{ sizeOnly: true }})
+- Get simple file info: glob("**/*.js", {{ objectMode: true }})
+- Hidden files included: glob("**/*", {{ dot: true }})
+- Limit depth: glob("**/*", {{ deep: 2 }})
+- Case insensitive: glob("**/*.TXT", {{ caseSensitive: false }})
 
 ## YOUR CAPABILITIES & TOOLS
 

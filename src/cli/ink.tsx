@@ -1,19 +1,18 @@
 #!/usr/bin/env node
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { render, Box, Text, useInput, useApp } from 'ink';
 import { ThemeProvider, defaultTheme } from '@inkjs/ui';
-import { ThreadSelector } from '../components/ThreadSelector.js';
-import { ThreadManager } from '../components/ThreadManager.js';
+import { Box, Text, render, useApp, useInput } from 'ink';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChatInterface } from '../components/ChatInterface.js';
-import { MAX_CONVERSATION_LENGTH } from '../core/config.js';
-import { validateConversationHistory } from '../core/utils.js';
-import { callOpenRouterAPI } from '../core/api.js';
-import { tools, toolImplementations } from '../tools/index.js';
-import type { Message, DisplayMessage, ToolCall } from '../core/types.js';
-import { ThreadDatabase } from '../core/database.js';
-import { SYSTEM_PROMPT } from '../core/system-prompt.js';
-import { DATABASE_PATH, OPENROUTER_API_KEY } from '../core/config.js';
+import { ThreadManager } from '../components/ThreadManager.js';
+import { ThreadSelector } from '../components/ThreadSelector.js';
+
 import fs from 'fs';
+import { DATABASE_PATH, OPENROUTER_API_KEY } from '../core/config.js';
+import { ThreadDatabase } from '../core/database.js';
+import { createMakiAgent, executeAgent } from '../core/langchain-agent.js';
+import { createMemoryFromHistory } from '../core/langchain-memory.js';
+import { SYSTEM_PROMPT } from '../core/system-prompt.js';
+import type { DisplayMessage, Message } from '../core/types.js';
 
 // Helper function to format file sizes
 const formatBytes = (bytes: number): string => {
@@ -384,8 +383,9 @@ const App: React.FC<AppProps> = () => {
         }
       ];
 
-      const titleResponse = await callOpenRouterAPI(titlePrompt, []);
-      const title = titleResponse.choices?.[0]?.message?.content?.trim() || 'Untitled';
+      const agent = await createMakiAgent();
+      const response = await executeAgent(agent, `Generate a title for this conversation: "${userMessage}"`, []);
+      const title = response.output?.trim() || 'Untitled';
       
       // Update thread title in database
       await ThreadDatabase.updateThreadTitle(threadId, title);
@@ -401,146 +401,9 @@ const App: React.FC<AppProps> = () => {
     }
   }, [isSelectingThread, isManagingThread]);
 
-  const executeToolCall = useCallback(async (toolCall: ToolCall): Promise<any> => {
-    const { name, arguments: argsString } = toolCall.function;
-    
-    let args: any;
-    try {
-      args = JSON.parse(argsString);
-    } catch (error) {
-      return { error: 'Invalid JSON in tool arguments' };
-    }
 
-    const implementation = toolImplementations[name];
-    if (!implementation) {
-      return { error: `Unknown tool: ${name}` };
-    }
 
-    const toolId = `tool-${Date.now()}-${Math.random()}`;
 
-    try {
-      // Show tool execution
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: name === 'think' ? args.thoughts : `${name}`,
-        isToolExecution: true,
-        toolName: name,
-        isProcessing: true,
-        id: toolId
-      } as DisplayMessage]);
-
-      const result = await implementation(args);
-      
-      // Replace executing message with result using stable ID
-      setMessages(prev => prev.map(msg => 
-        msg.id === toolId ? {
-          role: 'assistant',
-          content: name === 'think' ? args.thoughts : formatToolResult(name, args, result),
-          isProcessing: false,
-          isToolResult: name !== 'think',
-          isThinking: name === 'think',
-          id: toolId
-        } as DisplayMessage : msg
-      ));
-      
-      return result;
-    } catch (error: any) {
-      // Replace executing message with error using stable ID
-      setMessages(prev => prev.map(msg => 
-        msg.id === toolId ? {
-          role: 'assistant',
-          content: `❌ ${name} failed: ${error.message}`,
-          isProcessing: false,
-          isToolResult: true,
-          id: toolId
-        } as DisplayMessage : msg
-      ));
-      return { error: error.message };
-    }
-  }, [formatToolResult]);
-
-  const processAssistantResponse = useCallback(async (response: any, currentHistory: Message[], depth: number = 0): Promise<Message[]> => {
-    // Prevent infinite recursion
-    if (depth > 3) {
-      console.warn('Maximum recursion depth reached for tool calls');
-      return [];
-    }
-
-    const choice = response.choices?.[0];
-    if (!choice) {
-      throw new Error('The AI model did not provide a response. Please try your request again.');
-    }
-
-    if (!choice.message) {
-      throw new Error('The AI model returned an incomplete response. Please try again.');
-    }
-
-    const message = choice.message;
-    const newMessages: Message[] = [];
-    
-    // Add assistant message to conversation
-    const assistantMessage: Message = {
-      role: 'assistant',
-      content: message.content,
-      tool_calls: message.tool_calls
-    };
-    newMessages.push(assistantMessage);
-
-    // Save assistant message to database
-    if (currentThreadId) {
-      await ThreadDatabase.addMessage(
-        currentThreadId,
-        'ASSISTANT',
-        message.content || '',
-        message.tool_calls
-      );
-    }
-
-    // Display assistant's text response if any
-    if (message.content && message.content.trim()) {
-      setMessages(prev => [...prev, {
-        ...assistantMessage,
-        showToolCalls: false
-      } as DisplayMessage]);
-    }
-
-    // Process tool calls if any
-    if (message.tool_calls && message.tool_calls.length > 0) {
-      for (const toolCall of message.tool_calls) {
-        const result = await executeToolCall(toolCall);
-        
-        // Add tool response to conversation
-        const toolMessage: Message = {
-          role: 'tool',
-          content: JSON.stringify(result),
-          tool_call_id: toolCall.id,
-          name: toolCall.function.name
-        };
-        newMessages.push(toolMessage);
-
-        // Save tool response to database
-        if (currentThreadId) {
-          await ThreadDatabase.addMessage(
-            currentThreadId,
-            'TOOL',
-            JSON.stringify(result),
-            undefined,
-            [{ tool_call_id: toolCall.id, name: toolCall.function.name, result }]
-          );
-        }
-      }
-
-      // Get follow-up response from assistant after tool execution (with recursion limit)
-      if (depth < 3) {
-        const updatedHistory = [...currentHistory, ...newMessages];
-        const followUpResponse = await callOpenRouterAPI(updatedHistory, tools);
-        const followUpMessages = await processAssistantResponse(followUpResponse, updatedHistory, depth + 1);
-        newMessages.push(...followUpMessages);
-      }
-    }
-
-    return newMessages;
-  }, [executeToolCall, currentThreadId]);
 
   const handleSubmit = useCallback(async (userInput: string) => {
     if (!userInput.trim() || isProcessing) return;
@@ -552,7 +415,7 @@ const App: React.FC<AppProps> = () => {
       return;
     }
 
-    // Add user message to display and conversation
+    // Keep existing UI updates
     const userMessage: Message = {
       role: 'user',
       content: trimmedInput
@@ -561,38 +424,46 @@ const App: React.FC<AppProps> = () => {
     setMessages(prev => [...prev, userMessage as DisplayMessage]);
     setIsProcessing(true);
 
-    // Save user message to database
+    // Keep database persistence
     if (currentThreadId) {
       await ThreadDatabase.addMessage(currentThreadId, 'USER', trimmedInput);
       
-      // Check if this is the first user message (only system message exists)
       const isFirstMessage = conversationHistory.length === 1 && conversationHistory[0].role === 'system';
-      if (isFirstMessage) {
-        // Generate thread title in the background
+      if (isFirstMessage && currentThreadId) {
         generateThreadTitle(trimmedInput, currentThreadId);
       }
     }
 
     try {
-      const newHistory = [...conversationHistory, userMessage];
-      
-      // Validate and potentially clean conversation history
-      const cleanHistory = validateConversationHistory(newHistory);
-      
-      // Limit conversation length
-      const limitedHistory = cleanHistory.length > MAX_CONVERSATION_LENGTH
-        ? cleanHistory.slice(-MAX_CONVERSATION_LENGTH)
-        : cleanHistory;
+      // NEW: LangChain integration
+      const agent = await createMakiAgent();
+      const chatHistory = createMemoryFromHistory(conversationHistory);
 
-      // Call OpenRouter API
-      const response = await callOpenRouterAPI(limitedHistory, tools);
-      const responseMessages = await processAssistantResponse(response, limitedHistory);
-      
-      // Update conversation history with both the limited history and new responses
-      const finalHistory = [...limitedHistory, ...responseMessages];
-      setConversationHistory(finalHistory);
+      const response = await executeAgent(agent, trimmedInput, chatHistory);
+
+      // Keep existing UI updates
+      if (response.output && response.output.trim()) {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: response.output,
+          showToolCalls: false
+        } as DisplayMessage]);
+      }
+
+      // Keep database persistence
+      if (currentThreadId && response.output) {
+        await ThreadDatabase.addMessage(currentThreadId, 'ASSISTANT', response.output);
+      }
+
+      // Update conversation history
+      const newHistory = [...conversationHistory, userMessage, {
+        role: 'assistant' as const,
+        content: response.output
+      }];
+      setConversationHistory(newHistory);
 
     } catch (error: any) {
+      // Keep existing error handling
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: `❗ Error: ${error.message}`,
@@ -600,7 +471,7 @@ const App: React.FC<AppProps> = () => {
     } finally {
       setIsProcessing(false);
     }
-  }, [isProcessing, conversationHistory, processAssistantResponse, exit, currentThreadId, generateThreadTitle]);
+  }, [isProcessing, conversationHistory, formatToolResult, exit, currentThreadId, generateThreadTitle]);
 
   const handleInputKeyChange = useCallback(() => {
     setInputKey(prev => prev + 1);

@@ -53,12 +53,15 @@
   },
   "dependencies": {
     "@inkjs/ui": "^2.0.0",
+    "@langchain/core": "^0.3.57",
+    "@langchain/openai": "^0.5.11",
     "@openrouter/ai-sdk-provider": "^0.4.5",
     "@prisma/client": "^6.8.2",
     "dotenv": "^16.5.0",
     "fast-csv": "^5.0.2",
     "fast-glob": "^3.3.3",
     "ink": "^5.2.1",
+    "langchain": "^0.3.27",
     "prisma": "^6.8.2",
     "react": "^18.3.1"
   },
