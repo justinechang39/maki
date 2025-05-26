@@ -7,6 +7,9 @@ import { MODEL_ID, OPENROUTER_API_KEY } from './config.js';
 import { SYSTEM_PROMPT } from './system-prompt.js';
 import type { Tool } from './types.js';
 
+// Store usage info globally for access after LLM calls
+let lastUsageInfo: any = null;
+
 // Configure ChatOpenAI for OpenRouter
 const llm = new ChatOpenAI({
   apiKey: OPENROUTER_API_KEY,
@@ -19,7 +22,27 @@ const llm = new ChatOpenAI({
     }
   },
   timeout: 60000,
-  temperature: 0.1
+  temperature: 0.1,
+  modelKwargs: {
+    usage: { include: true }
+  },
+  callbacks: [
+    {
+      handleLLMEnd(output) {
+        // Extract usage info from the full LLM output
+        const usage = output.llmOutput?.tokenUsage;
+        if (usage) {
+          lastUsageInfo = {
+            prompt_tokens: usage.promptTokens || 0,
+            completion_tokens: usage.completionTokens || 0,
+            total_tokens: usage.totalTokens || 0,
+            cost: 0 // Not available through LangChain
+          };
+          console.log('💡 Captured usage info:', lastUsageInfo);
+        }
+      }
+    }
+  ]
 });
 
 // Convert our tool definitions to LangChain tools with improved error handling
@@ -119,6 +142,14 @@ export async function executeAgentWithProgress(
 ): Promise<{ 
   output: string; 
   error?: string; 
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    cost: number;
+    cached_tokens?: number;
+    reasoning_tokens?: number;
+  };
   toolCalls?: Array<{
     tool: string;
     input: any;
@@ -138,8 +169,13 @@ export async function executeAgentWithProgress(
       output: step.observation
     })) || [];
 
+    // Use captured usage info from callback
+    const usage = lastUsageInfo;
+    lastUsageInfo = null; // Reset for next call
+    
     return { 
       output: result.output,
+      usage: usage,
       toolCalls
     };
   } catch (error) {

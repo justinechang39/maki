@@ -46,6 +46,7 @@ const App: React.FC<AppProps> = () => {
   const [threadManagementIndex, setThreadManagementIndex] = useState(0);
   const [isLoadingThreads, setIsLoadingThreads] = useState(true);
   const [isDeletingThread, setIsDeletingThread] = useState(false);
+  const [lastUsage, setLastUsage] = useState<any>(null);
   const isCreatingThread = useRef(false);
   const isDeletingThreadRef = useRef(false);
   const { exit } = useApp();
@@ -465,6 +466,11 @@ const App: React.FC<AppProps> = () => {
       
       // Note: Tool calls are now handled by callbacks above, no need for fallback processing
 
+      // Store usage data
+      if (response.usage) {
+        setLastUsage(response.usage);
+      }
+
       // Display assistant response
       if (response.output && response.output.trim()) {
         setMessages(prev => [...prev, {
@@ -588,6 +594,7 @@ const App: React.FC<AppProps> = () => {
       inputKey={inputKey}
       onSubmit={handleSubmit}
       onInputKeyChange={handleInputKeyChange}
+      usage={lastUsage}
     />
   );
 };

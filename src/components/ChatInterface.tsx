@@ -3,6 +3,7 @@ import { Box, Text, Static } from 'ink';
 import { MessageRenderer } from './MessageRenderer.js';
 import { ProcessingIndicator } from './ProcessingIndicator.js';
 import { InputArea } from './InputArea.js';
+import { UsageDisplay } from './UsageDisplay.js';
 import type { DisplayMessage } from '../core/types.js';
 
 interface ChatInterfaceProps {
@@ -11,6 +12,14 @@ interface ChatInterfaceProps {
   inputKey: number;
   onSubmit: (value: string) => void;
   onInputKeyChange: () => void;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    cost: number;
+    cached_tokens?: number;
+    reasoning_tokens?: number;
+  };
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = React.memo(({ 
@@ -18,7 +27,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = React.memo(({
   isProcessing, 
   inputKey, 
   onSubmit, 
-  onInputKeyChange 
+  onInputKeyChange,
+  usage
 }) => {
   return (
     <Box flexDirection="column" height="100%">
@@ -50,6 +60,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = React.memo(({
           onInputKeyChange={onInputKeyChange}
         />
       </Box>
+      
+      {/* Usage - right below input with no gap */}
+      {usage && (
+        <Box flexShrink={0}>
+          <UsageDisplay usage={usage} />
+        </Box>
+      )}
     </Box>
   );
 });
