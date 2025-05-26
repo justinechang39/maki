@@ -1,10 +1,10 @@
 import type { Tool } from '../core/types.js';
 
 // Tool definitions
-import { fileTools, fileToolImplementations } from './file-tools.js';
-import { csvTools, csvToolImplementations } from './csv-tools.js';
-import { todoTools, todoToolImplementations } from './todo-tools.js';
-import { webTools, webToolImplementations } from './web-tools.js';
+import { csvToolImplementations, csvTools } from './csv-tools.js';
+import { fileToolImplementations, fileTools } from './file-tools.js';
+import { todoToolImplementations, todoTools } from './todo-tools.js';
+import { webToolImplementations, webTools } from './web-tools.js';
 
 // Think tool
 const thinkTool: Tool = {

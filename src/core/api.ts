@@ -1,4 +1,4 @@
-import { OPENROUTER_API_KEY, API_URL, MODEL_ID } from './config.js';
+import { OPENROUTER_API_KEY, API_URL, SELECTED_MODEL } from './config.js';
 import type { Message, Tool } from './types.js';
 
 export async function callOpenRouterAPI(
@@ -17,7 +17,7 @@ export async function callOpenRouterAPI(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: MODEL_ID,
+        model: SELECTED_MODEL,
         messages,
         tools,
         tool_choice: 'auto',

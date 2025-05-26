@@ -1,32 +1,38 @@
-# maki - Project Structure
+# maki - LangChain-Powered AI Assistant
 
 ## Overview
-This is a maki CLI tool for file operations, CSV manipulation, todo management, and web content fetching.
+Maki is an AI-powered CLI tool using LangChain for intelligent file operations, CSV manipulation, todo management, and web content fetching. It features conversation threading, persistent memory, and detailed tool execution logging.
 
 ## Commands
 - `npm run dev` - Start development interface
-- `npm run build` - Build TypeScript to JavaScript
+- `npm run build` - Build TypeScript to JavaScript  
 - `npm start` - Run built version
 
 ## Project Structure
 
 ```
 src/
-├── core/           # Core functionality
-│   ├── config.ts   # Configuration constants
-│   ├── types.ts    # Type definitions  
-│   ├── utils.ts    # Helper functions
-│   ├── api.ts      # OpenRouter API client
-│   └── csv-utils.ts # CSV parsing utilities
-├── tools/          # Tool definitions and implementations
-│   ├── index.ts    # Tool exports
-│   ├── file-tools.ts    # File system operations
-│   ├── csv-tools.ts     # CSV data manipulation
-│   ├── todo-tools.ts    # Todo list management
-│   └── web-tools.ts     # Web content fetching
-├── cli/            # CLI interface
-│   └── ink.tsx     # Ink-based UI
-└── index.ts        # Main entry point
+├── core/                    # Core LangChain functionality
+│   ├── config.ts           # Configuration constants
+│   ├── types.ts            # Type definitions  
+│   ├── langchain-agent.ts  # LangChain agent setup & execution
+│   ├── langchain-memory.ts # Conversation memory management
+│   ├── system-prompt.ts    # Agent system instructions
+│   ├── database.ts         # Thread persistence (Prisma)
+│   └── csv-utils.ts        # CSV parsing utilities
+├── tools/                  # Tool definitions and implementations
+│   ├── index.ts            # Tool exports
+│   ├── file-tools.ts       # File system operations
+│   ├── csv-tools.ts        # CSV data manipulation
+│   ├── todo-tools.ts       # Todo list management
+│   └── web-tools.ts        # Web content fetching
+├── components/             # React UI components
+│   ├── ChatInterface.tsx   # Main chat interface
+│   ├── ThreadManager.tsx   # Thread management UI
+│   └── ThreadSelector.tsx  # Thread selection UI
+├── cli/                    # CLI interface
+│   └── ink.tsx            # Ink-based UI with LangChain integration
+└── index.ts               # Main entry point
 ```
 
 ## Adding New Tools
@@ -42,6 +48,30 @@ Set your OpenRouter API key:
 ```bash
 export OPENROUTER_API_KEY="your-api-key-here"
 ```
+
+## LangChain Implementation Features
+
+### Agent Configuration
+- **Model**: Uses OpenAI-compatible API via OpenRouter
+- **Agent Type**: Tool-calling agent with structured tool definitions  
+- **Max Iterations**: 15 iterations for complex multi-tool operations
+- **Timeout**: 5 minutes execution timeout
+- **Memory**: Persistent conversation threads with Prisma database
+- **Verbose Logging**: Detailed tool execution logs and timing
+
+### Tool Execution Visibility
+The agent provides comprehensive logging of tool usage:
+- 🔧 Tool execution start with input parameters
+- ⏱️ Execution duration timing
+- 📤 Tool output preview (truncated for readability)
+- ❌ Clear error messages with suggested alternatives
+- 🤖 Agent reasoning for tool selection
+
+### Best Practices Applied
+- **Tool Output Format**: Returns structured data vs JSON strings for better LLM processing
+- **Error Handling**: Graceful error recovery with actionable suggestions
+- **Memory Management**: Conversation history persisted across sessions
+- **Intermediate Steps**: Full visibility into agent reasoning and tool chain
 
 ## AI Agent Guidelines
 

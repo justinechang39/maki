@@ -6,6 +6,7 @@ A command-line AI agent built with OpenRouter that can perform file operations, 
 
 ## Features
 
+- **Multiple AI Models**: Choose from GPT-4, Claude, Gemini, and Llama models at startup
 - **File Operations**: Read, write, create, delete, copy, and move files and directories
 - **CSV Data Tools**: Parse, filter, sort, merge, analyze, and export CSV data
 - **Todo Management**: Create, view, update, and manage todo lists with priorities
@@ -28,6 +29,8 @@ export OPENROUTER_API_KEY="your-api-key-here"
 ```bash
 npx maki
 ```
+
+The tool will first prompt you to select an AI model from the available options (GPT-4, Claude, Gemini, Llama). Then you can create a new conversation or continue an existing one.
 
 That's it! No installation required.
 
@@ -85,6 +88,11 @@ cd /any/directory
 maki
 ```
 
+When you start maki, you'll be prompted to:
+1. **Select an AI model** from the available options (GPT-4, Claude, Gemini, Llama)
+2. **Choose or create a conversation thread**
+3. **Start chatting** with your selected AI model
+
 The agent will operate on files in your current working directory and store its database in `~/.config/maki/`.
 
 ### Development Mode
@@ -107,6 +115,14 @@ npm start
 - `npm run migrate` - Run database migrations
 
 ## Configuration
+
+### AI Models Available
+- **OpenAI GPT-4**: High-quality reasoning and code generation
+- **OpenAI GPT-4.1 Mini**: Faster responses, cost-effective
+- **Anthropic Claude 3.5 Sonnet**: Excellent for analysis and writing
+- **Anthropic Claude 3 Opus**: Most capable for complex tasks
+- **Google Gemini Pro**: Strong multimodal capabilities
+- **Meta Llama 3 70B**: Open-source alternative
 
 ### Global Installation
 - Database: `~/.config/maki/database.sqlite`

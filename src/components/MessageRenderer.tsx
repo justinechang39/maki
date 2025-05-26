@@ -10,15 +10,15 @@ export const MessageRenderer: React.FC<MessageRendererProps> = React.memo(({ mes
   if (msg.isToolResult) {
     const isError = msg.content?.includes('❌');
     const isSuccess = msg.content?.includes('✅') || (!isError && msg.content);
-    const borderColor = isError ? 'red' : isSuccess ? 'green' : 'blue';
-    const iconColor = isError ? 'red' : isSuccess ? 'green' : 'blue';
-    const icon = isError ? '❌' : isSuccess ? '✅' : '⚙️';
+    const borderColor = isError ? 'red' : isSuccess ? 'green' : 'cyan';
+    const iconColor = isError ? 'red' : isSuccess ? 'green' : 'cyan';
+    const icon = isError ? '❌' : '🔧';
     
     return (
       <Box paddingX={2} paddingY={1} borderStyle="round" borderColor={borderColor}>
         <Box flexDirection="column">
           <Box marginBottom={1}>
-            <Text color={iconColor} bold>{icon} tool result</Text>
+            <Text color={iconColor} bold>{icon} {msg.toolName || 'tool'}</Text>
           </Box>
           <Text color={iconColor} wrap="wrap">{msg.content?.replace(/^[✅❌⚠️]\s*/, '') || ''}</Text>
         </Box>

@@ -1,19 +1,20 @@
 #!/usr/bin/env node
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { render, Box, Text, useInput, useApp } from 'ink';
 import { ThemeProvider, defaultTheme } from '@inkjs/ui';
-import { ThreadSelector } from '../components/ThreadSelector.js';
-import { ThreadManager } from '../components/ThreadManager.js';
+import { Box, Text, render, useApp, useInput } from 'ink';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChatInterface } from '../components/ChatInterface.js';
-import { MAX_CONVERSATION_LENGTH } from '../core/config.js';
-import { validateConversationHistory } from '../core/utils.js';
-import { callOpenRouterAPI } from '../core/api.js';
-import { tools, toolImplementations } from '../tools/index.js';
-import type { Message, DisplayMessage, ToolCall } from '../core/types.js';
-import { ThreadDatabase } from '../core/database.js';
-import { SYSTEM_PROMPT } from '../core/system-prompt.js';
-import { DATABASE_PATH, OPENROUTER_API_KEY } from '../core/config.js';
+import { ModelSelector } from '../components/ModelSelector.js';
+import { ThreadManager } from '../components/ThreadManager.js';
+import { ThreadSelector } from '../components/ThreadSelector.js';
+
 import fs from 'fs';
+import { DATABASE_PATH, OPENROUTER_API_KEY, AVAILABLE_MODELS, setSelectedModel } from '../core/config.js';
+import type { ModelId } from '../core/config.js';
+import { ThreadDatabase } from '../core/database.js';
+import { createMakiAgent, executeAgent, executeAgentWithProgress } from '../core/langchain-agent.js';
+import { createMemoryFromHistory } from '../core/langchain-memory.js';
+import { SYSTEM_PROMPT } from '../core/system-prompt.js';
+import type { DisplayMessage, Message } from '../core/types.js';
 
 // Helper function to format file sizes
 const formatBytes = (bytes: number): string => {
@@ -33,26 +34,30 @@ interface ThreadListItem {
   messageCount: number;
 }
 
-
-
 const App: React.FC<AppProps> = () => {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [inputKey, setInputKey] = useState(0);
   const [conversationHistory, setConversationHistory] = useState<Message[]>([]);
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
-  const [isSelectingThread, setIsSelectingThread] = useState(true);
+  const [isSelectingModel, setIsSelectingModel] = useState(true);
+  const [isSelectingThread, setIsSelectingThread] = useState(false);
   const [isManagingThread, setIsManagingThread] = useState(false);
+  const [selectedModelIndex, setSelectedModelIndex] = useState(0);
   const [selectedThread, setSelectedThread] = useState<ThreadListItem | null>(null);
   const [threads, setThreads] = useState<ThreadListItem[]>([]);
   const [selectedThreadIndex, setSelectedThreadIndex] = useState(0);
   const [threadManagementIndex, setThreadManagementIndex] = useState(0);
   const [isLoadingThreads, setIsLoadingThreads] = useState(true);
   const [isDeletingThread, setIsDeletingThread] = useState(false);
+  const [lastUsage, setLastUsage] = useState<any>(null);
   const isCreatingThread = useRef(false);
   const isDeletingThreadRef = useRef(false);
   const { exit } = useApp();
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Create agent instance once and reuse it
+  const agentRef = useRef<any>(null);
 
   // Format tool results for better display - no need for useCallback, it's a pure function
   const formatToolResult = (toolName: string, args: any, result: any): string => {
@@ -219,9 +224,18 @@ const App: React.FC<AppProps> = () => {
     }
   };
 
-  // Load threads on mount
+  // Handle model selection
+  const handleModelSelect = useCallback((model: ModelId) => {
+    setSelectedModel(model);
+    setIsSelectingModel(false);
+    setIsSelectingThread(true);
+  }, []);
+
+  // Load threads and create agent after model selection
   useEffect(() => {
-    const loadThreads = async () => {
+    if (isSelectingModel) return; // Don't initialize until model is selected
+
+    const initializeApp = async () => {
       try {
         // Check if database exists, if not, create it with migration
         if (!fs.existsSync(DATABASE_PATH)) {
@@ -230,17 +244,28 @@ const App: React.FC<AppProps> = () => {
           // The database will be created automatically when Prisma connects
         }
         
+        // Create agent fresh each time to use current model
+        agentRef.current = await createMakiAgent((toolName: string, message: string) => {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: message,
+            isToolResult: true,
+            toolName: toolName,
+            showToolCalls: false
+          } as DisplayMessage]);
+        });
+        
         const threadList = await ThreadDatabase.getAllThreads();
         setThreads(threadList);
         setIsLoadingThreads(false);
       } catch (error) {
-        console.error('Failed to load threads:', error);
+        console.error('Failed to initialize app:', error);
         setIsLoadingThreads(false);
       }
     };
     
-    loadThreads();
-  }, []);
+    initializeApp();
+  }, [isSelectingModel]);
 
   // Cleanup timeouts on unmount
   useEffect(() => {
@@ -384,8 +409,9 @@ const App: React.FC<AppProps> = () => {
         }
       ];
 
-      const titleResponse = await callOpenRouterAPI(titlePrompt, []);
-      const title = titleResponse.choices?.[0]?.message?.content?.trim() || 'Untitled';
+      const agent = await createMakiAgent();
+      const response = await executeAgent(agent, `Generate a title for this conversation: "${userMessage}"`, []);
+      const title = response.output?.trim() || 'Untitled';
       
       // Update thread title in database
       await ThreadDatabase.updateThreadTitle(threadId, title);
@@ -401,146 +427,9 @@ const App: React.FC<AppProps> = () => {
     }
   }, [isSelectingThread, isManagingThread]);
 
-  const executeToolCall = useCallback(async (toolCall: ToolCall): Promise<any> => {
-    const { name, arguments: argsString } = toolCall.function;
-    
-    let args: any;
-    try {
-      args = JSON.parse(argsString);
-    } catch (error) {
-      return { error: 'Invalid JSON in tool arguments' };
-    }
 
-    const implementation = toolImplementations[name];
-    if (!implementation) {
-      return { error: `Unknown tool: ${name}` };
-    }
 
-    const toolId = `tool-${Date.now()}-${Math.random()}`;
 
-    try {
-      // Show tool execution
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: name === 'think' ? args.thoughts : `${name}`,
-        isToolExecution: true,
-        toolName: name,
-        isProcessing: true,
-        id: toolId
-      } as DisplayMessage]);
-
-      const result = await implementation(args);
-      
-      // Replace executing message with result using stable ID
-      setMessages(prev => prev.map(msg => 
-        msg.id === toolId ? {
-          role: 'assistant',
-          content: name === 'think' ? args.thoughts : formatToolResult(name, args, result),
-          isProcessing: false,
-          isToolResult: name !== 'think',
-          isThinking: name === 'think',
-          id: toolId
-        } as DisplayMessage : msg
-      ));
-      
-      return result;
-    } catch (error: any) {
-      // Replace executing message with error using stable ID
-      setMessages(prev => prev.map(msg => 
-        msg.id === toolId ? {
-          role: 'assistant',
-          content: `❌ ${name} failed: ${error.message}`,
-          isProcessing: false,
-          isToolResult: true,
-          id: toolId
-        } as DisplayMessage : msg
-      ));
-      return { error: error.message };
-    }
-  }, [formatToolResult]);
-
-  const processAssistantResponse = useCallback(async (response: any, currentHistory: Message[], depth: number = 0): Promise<Message[]> => {
-    // Prevent infinite recursion
-    if (depth > 3) {
-      console.warn('Maximum recursion depth reached for tool calls');
-      return [];
-    }
-
-    const choice = response.choices?.[0];
-    if (!choice) {
-      throw new Error('The AI model did not provide a response. Please try your request again.');
-    }
-
-    if (!choice.message) {
-      throw new Error('The AI model returned an incomplete response. Please try again.');
-    }
-
-    const message = choice.message;
-    const newMessages: Message[] = [];
-    
-    // Add assistant message to conversation
-    const assistantMessage: Message = {
-      role: 'assistant',
-      content: message.content,
-      tool_calls: message.tool_calls
-    };
-    newMessages.push(assistantMessage);
-
-    // Save assistant message to database
-    if (currentThreadId) {
-      await ThreadDatabase.addMessage(
-        currentThreadId,
-        'ASSISTANT',
-        message.content || '',
-        message.tool_calls
-      );
-    }
-
-    // Display assistant's text response if any
-    if (message.content && message.content.trim()) {
-      setMessages(prev => [...prev, {
-        ...assistantMessage,
-        showToolCalls: false
-      } as DisplayMessage]);
-    }
-
-    // Process tool calls if any
-    if (message.tool_calls && message.tool_calls.length > 0) {
-      for (const toolCall of message.tool_calls) {
-        const result = await executeToolCall(toolCall);
-        
-        // Add tool response to conversation
-        const toolMessage: Message = {
-          role: 'tool',
-          content: JSON.stringify(result),
-          tool_call_id: toolCall.id,
-          name: toolCall.function.name
-        };
-        newMessages.push(toolMessage);
-
-        // Save tool response to database
-        if (currentThreadId) {
-          await ThreadDatabase.addMessage(
-            currentThreadId,
-            'TOOL',
-            JSON.stringify(result),
-            undefined,
-            [{ tool_call_id: toolCall.id, name: toolCall.function.name, result }]
-          );
-        }
-      }
-
-      // Get follow-up response from assistant after tool execution (with recursion limit)
-      if (depth < 3) {
-        const updatedHistory = [...currentHistory, ...newMessages];
-        const followUpResponse = await callOpenRouterAPI(updatedHistory, tools);
-        const followUpMessages = await processAssistantResponse(followUpResponse, updatedHistory, depth + 1);
-        newMessages.push(...followUpMessages);
-      }
-    }
-
-    return newMessages;
-  }, [executeToolCall, currentThreadId]);
 
   const handleSubmit = useCallback(async (userInput: string) => {
     if (!userInput.trim() || isProcessing) return;
@@ -552,7 +441,7 @@ const App: React.FC<AppProps> = () => {
       return;
     }
 
-    // Add user message to display and conversation
+    // Keep existing UI updates
     const userMessage: Message = {
       role: 'user',
       content: trimmedInput
@@ -561,38 +450,61 @@ const App: React.FC<AppProps> = () => {
     setMessages(prev => [...prev, userMessage as DisplayMessage]);
     setIsProcessing(true);
 
-    // Save user message to database
+    // Keep database persistence
     if (currentThreadId) {
       await ThreadDatabase.addMessage(currentThreadId, 'USER', trimmedInput);
       
-      // Check if this is the first user message (only system message exists)
       const isFirstMessage = conversationHistory.length === 1 && conversationHistory[0].role === 'system';
-      if (isFirstMessage) {
-        // Generate thread title in the background
+      if (isFirstMessage && currentThreadId) {
         generateThreadTitle(trimmedInput, currentThreadId);
       }
     }
 
     try {
-      const newHistory = [...conversationHistory, userMessage];
-      
-      // Validate and potentially clean conversation history
-      const cleanHistory = validateConversationHistory(newHistory);
-      
-      // Limit conversation length
-      const limitedHistory = cleanHistory.length > MAX_CONVERSATION_LENGTH
-        ? cleanHistory.slice(-MAX_CONVERSATION_LENGTH)
-        : cleanHistory;
+      // Use the pre-created agent instance
+      if (!agentRef.current) {
+        throw new Error('Agent not initialized');
+      }
 
-      // Call OpenRouter API
-      const response = await callOpenRouterAPI(limitedHistory, tools);
-      const responseMessages = await processAssistantResponse(response, limitedHistory);
+      const chatHistory = createMemoryFromHistory(conversationHistory);
       
-      // Update conversation history with both the limited history and new responses
-      const finalHistory = [...limitedHistory, ...responseMessages];
-      setConversationHistory(finalHistory);
+      // Execute agent with progress tracking handled by tool wrappers
+      const response = await executeAgentWithProgress(
+        agentRef.current, 
+        trimmedInput, 
+        chatHistory
+      );
+      
+      // Note: Tool calls are now handled by callbacks above, no need for fallback processing
+
+      // Store usage data
+      if (response.usage) {
+        setLastUsage(response.usage);
+      }
+
+      // Display assistant response
+      if (response.output && response.output.trim()) {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: response.output,
+          showToolCalls: false
+        } as DisplayMessage]);
+      }
+
+      // Persist to database
+      if (currentThreadId && response.output) {
+        await ThreadDatabase.addMessage(currentThreadId, 'ASSISTANT', response.output);
+      }
+
+      // Update conversation history
+      const newHistory = [...conversationHistory, userMessage, {
+        role: 'assistant' as const,
+        content: response.output
+      }];
+      setConversationHistory(newHistory);
 
     } catch (error: any) {
+      // Keep existing error handling
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: `❗ Error: ${error.message}`,
@@ -600,14 +512,24 @@ const App: React.FC<AppProps> = () => {
     } finally {
       setIsProcessing(false);
     }
-  }, [isProcessing, conversationHistory, processAssistantResponse, exit, currentThreadId, generateThreadTitle]);
+  }, [isProcessing, conversationHistory, formatToolResult, exit, currentThreadId, generateThreadTitle]);
 
   const handleInputKeyChange = useCallback(() => {
     setInputKey(prev => prev + 1);
   }, []);
 
   useInput((input, key) => {
-    if (isSelectingThread) {
+    if (isSelectingModel) {
+      if (key.upArrow) {
+        setSelectedModelIndex(prev => Math.max(0, prev - 1));
+      } else if (key.downArrow) {
+        setSelectedModelIndex(prev => Math.min(AVAILABLE_MODELS.length - 1, prev + 1));
+      } else if (key.return) {
+        handleModelSelect(AVAILABLE_MODELS[selectedModelIndex]);
+      } else if (key.ctrl && input === 'c') {
+        exit();
+      }
+    } else if (isSelectingThread) {
       if (key.upArrow) {
         setSelectedThreadIndex(prev => Math.max(0, prev - 1));
       } else if (key.downArrow) {
@@ -639,6 +561,21 @@ const App: React.FC<AppProps> = () => {
       }
     }
   });
+
+  if (isSelectingModel) {
+    return (
+      <Box flexDirection="column" height="100%">
+        <Box paddingY={1}>
+          <Text bold color="cyan">▌maki</Text>
+        </Box>
+        
+        <ModelSelector 
+          selectedIndex={selectedModelIndex}
+          onSelect={handleModelSelect}
+        />
+      </Box>
+    );
+  }
 
   if (isLoadingThreads) {
     return (
@@ -693,6 +630,7 @@ const App: React.FC<AppProps> = () => {
       inputKey={inputKey}
       onSubmit={handleSubmit}
       onInputKeyChange={handleInputKeyChange}
+      usage={lastUsage}
     />
   );
 };
