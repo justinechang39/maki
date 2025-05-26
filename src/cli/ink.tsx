@@ -244,18 +244,16 @@ const App: React.FC<AppProps> = () => {
           // The database will be created automatically when Prisma connects
         }
         
-        // Create agent once on startup (after model selection)
-        if (!agentRef.current) {
-          agentRef.current = await createMakiAgent((toolName: string, message: string) => {
-            setMessages(prev => [...prev, {
-              role: 'assistant',
-              content: message,
-              isToolResult: true,
-              toolName: toolName,
-              showToolCalls: false
-            } as DisplayMessage]);
-          });
-        }
+        // Create agent fresh each time to use current model
+        agentRef.current = await createMakiAgent((toolName: string, message: string) => {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: message,
+            isToolResult: true,
+            toolName: toolName,
+            showToolCalls: false
+          } as DisplayMessage]);
+        });
         
         const threadList = await ThreadDatabase.getAllThreads();
         setThreads(threadList);

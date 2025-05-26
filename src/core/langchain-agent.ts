@@ -10,39 +10,41 @@ import type { Tool } from './types.js';
 // Store usage info globally for access after LLM calls
 let lastUsageInfo: any = null;
 
-// Configure ChatOpenAI for OpenRouter
-const llm = new ChatOpenAI({
-  apiKey: OPENROUTER_API_KEY,
-  modelName: SELECTED_MODEL,
-  configuration: {
-    baseURL: 'https://openrouter.ai/api/v1',
-    defaultHeaders: {
-      'HTTP-Referer': 'https://github.com/justinechang39/maki',
-      'X-Title': 'maki CLI tool'
-    }
-  },
-  timeout: 60000,
-  temperature: 0.1,
-  modelKwargs: {
-    usage: { include: true }
-  },
-  callbacks: [
-    {
-      handleLLMEnd(output) {
-        // Extract usage info from the full LLM output
-        const usage = output.llmOutput?.tokenUsage;
-        if (usage) {
-          lastUsageInfo = {
-            prompt_tokens: usage.promptTokens || 0,
-            completion_tokens: usage.completionTokens || 0,
-            total_tokens: usage.totalTokens || 0,
-            cost: 0 // Not available through LangChain
-          };
+// Create LLM instance dynamically to use current selected model
+function createLLM() {
+  return new ChatOpenAI({
+    apiKey: OPENROUTER_API_KEY,
+    modelName: SELECTED_MODEL,
+    configuration: {
+      baseURL: 'https://openrouter.ai/api/v1',
+      defaultHeaders: {
+        'HTTP-Referer': 'https://github.com/justinechang39/maki',
+        'X-Title': 'maki CLI tool'
+      }
+    },
+    timeout: 60000,
+    temperature: 0.1,
+    modelKwargs: {
+      usage: { include: true }
+    },
+    callbacks: [
+      {
+        handleLLMEnd(output) {
+          // Extract usage info from the full LLM output
+          const usage = output.llmOutput?.tokenUsage;
+          if (usage) {
+            lastUsageInfo = {
+              prompt_tokens: usage.promptTokens || 0,
+              completion_tokens: usage.completionTokens || 0,
+              total_tokens: usage.totalTokens || 0,
+              cost: 0 // Not available through LangChain
+            };
+          }
         }
       }
-    }
-  ]
-});
+    ]
+  });
+}
 
 // Convert our tool definitions to LangChain tools with improved error handling
 function convertToLangChainTools(toolDefs: Tool[], onToolProgress?: (toolName: string, result: string) => void): DynamicStructuredTool[] {
@@ -107,6 +109,9 @@ export async function createMakiAgent(onToolProgress?: (toolName: string, messag
       new MessagesPlaceholder('agent_scratchpad')
     ]);
 
+    // Create fresh LLM instance to use current selected model
+    const llm = createLLM();
+
     const agent = await createToolCallingAgent({
       llm,
       tools: langchainTools,
@@ -119,7 +124,7 @@ export async function createMakiAgent(onToolProgress?: (toolName: string, messag
       maxIterations: 15, // Increased for complex multi-tool operations
       verbose: false, // Disable LangChain verbose logging - we have our own
       returnIntermediateSteps: true,
-      earlyStoppingMethod: 'generate', // Better handling of tool outputs
+      earlyStoppingMethod: 'force', // Continue executing until completion
       handleParsingErrors: (error: Error) => {
         console.error('❌ Agent parsing error:', error);
         return `I encountered a parsing error: ${error.message}. Let me try a different approach to help you.`;
@@ -156,10 +161,12 @@ export async function executeAgentWithProgress(
   }>;
 }> {
   try {
+    console.log("🔍 HERE - About to invoke agent");
     const result = await agent.invoke({
       input: input,
       chat_history: chatHistory || []
     });
+    console.log("🔍 HERE - Agent result received:", typeof result.output, result.output?.substring(0, 100));
 
     // Extract tool calls from intermediate steps
     const toolCalls = result.intermediateSteps?.map((step: any) => ({

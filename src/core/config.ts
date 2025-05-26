@@ -14,10 +14,10 @@ export const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 export const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // Available models for user selection
 export const AVAILABLE_MODELS = [
-  'meta-llama/llama-4-scout',
-  'meta-llama/llama-4-maverick:free',
-  'nousresearch/deephermes-3-mistral-24b-preview:free',
   'anthropic/claude-3.7-sonnet',
+  'google/gemini-2.5-flash-preview-05-20:thinking',
+  'openai/gpt-4.1-mini',
+  'arcee-ai/caller-large',
 ] as const;
 
 export type ModelId = (typeof AVAILABLE_MODELS)[number];
