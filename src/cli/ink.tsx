@@ -3,11 +3,13 @@ import { ThemeProvider, defaultTheme } from '@inkjs/ui';
 import { Box, Text, render, useApp, useInput } from 'ink';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChatInterface } from '../components/ChatInterface.js';
+import { ModelSelector } from '../components/ModelSelector.js';
 import { ThreadManager } from '../components/ThreadManager.js';
 import { ThreadSelector } from '../components/ThreadSelector.js';
 
 import fs from 'fs';
-import { DATABASE_PATH, OPENROUTER_API_KEY } from '../core/config.js';
+import { DATABASE_PATH, OPENROUTER_API_KEY, AVAILABLE_MODELS, setSelectedModel } from '../core/config.js';
+import type { ModelId } from '../core/config.js';
 import { ThreadDatabase } from '../core/database.js';
 import { createMakiAgent, executeAgent, executeAgentWithProgress } from '../core/langchain-agent.js';
 import { createMemoryFromHistory } from '../core/langchain-memory.js';
@@ -38,8 +40,10 @@ const App: React.FC<AppProps> = () => {
   const [inputKey, setInputKey] = useState(0);
   const [conversationHistory, setConversationHistory] = useState<Message[]>([]);
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
-  const [isSelectingThread, setIsSelectingThread] = useState(true);
+  const [isSelectingModel, setIsSelectingModel] = useState(true);
+  const [isSelectingThread, setIsSelectingThread] = useState(false);
   const [isManagingThread, setIsManagingThread] = useState(false);
+  const [selectedModelIndex, setSelectedModelIndex] = useState(0);
   const [selectedThread, setSelectedThread] = useState<ThreadListItem | null>(null);
   const [threads, setThreads] = useState<ThreadListItem[]>([]);
   const [selectedThreadIndex, setSelectedThreadIndex] = useState(0);
@@ -220,8 +224,17 @@ const App: React.FC<AppProps> = () => {
     }
   };
 
-  // Load threads and create agent on mount
+  // Handle model selection
+  const handleModelSelect = useCallback((model: ModelId) => {
+    setSelectedModel(model);
+    setIsSelectingModel(false);
+    setIsSelectingThread(true);
+  }, []);
+
+  // Load threads and create agent after model selection
   useEffect(() => {
+    if (isSelectingModel) return; // Don't initialize until model is selected
+
     const initializeApp = async () => {
       try {
         // Check if database exists, if not, create it with migration
@@ -231,7 +244,7 @@ const App: React.FC<AppProps> = () => {
           // The database will be created automatically when Prisma connects
         }
         
-        // Create agent once on startup
+        // Create agent once on startup (after model selection)
         if (!agentRef.current) {
           agentRef.current = await createMakiAgent((toolName: string, message: string) => {
             setMessages(prev => [...prev, {
@@ -254,7 +267,7 @@ const App: React.FC<AppProps> = () => {
     };
     
     initializeApp();
-  }, []);
+  }, [isSelectingModel]);
 
   // Cleanup timeouts on unmount
   useEffect(() => {
@@ -508,7 +521,17 @@ const App: React.FC<AppProps> = () => {
   }, []);
 
   useInput((input, key) => {
-    if (isSelectingThread) {
+    if (isSelectingModel) {
+      if (key.upArrow) {
+        setSelectedModelIndex(prev => Math.max(0, prev - 1));
+      } else if (key.downArrow) {
+        setSelectedModelIndex(prev => Math.min(AVAILABLE_MODELS.length - 1, prev + 1));
+      } else if (key.return) {
+        handleModelSelect(AVAILABLE_MODELS[selectedModelIndex]);
+      } else if (key.ctrl && input === 'c') {
+        exit();
+      }
+    } else if (isSelectingThread) {
       if (key.upArrow) {
         setSelectedThreadIndex(prev => Math.max(0, prev - 1));
       } else if (key.downArrow) {
@@ -540,6 +563,21 @@ const App: React.FC<AppProps> = () => {
       }
     }
   });
+
+  if (isSelectingModel) {
+    return (
+      <Box flexDirection="column" height="100%">
+        <Box paddingY={1}>
+          <Text bold color="cyan">▌maki</Text>
+        </Box>
+        
+        <ModelSelector 
+          selectedIndex={selectedModelIndex}
+          onSelect={handleModelSelect}
+        />
+      </Box>
+    );
+  }
 
   if (isLoadingThreads) {
     return (

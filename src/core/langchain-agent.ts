@@ -3,7 +3,7 @@ import { DynamicStructuredTool } from '@langchain/core/tools';
 import { ChatOpenAI } from '@langchain/openai';
 import { AgentExecutor, createToolCallingAgent } from 'langchain/agents';
 import { toolImplementations, tools } from '../tools/index.js';
-import { MODEL_ID, OPENROUTER_API_KEY } from './config.js';
+import { SELECTED_MODEL, OPENROUTER_API_KEY } from './config.js';
 import { SYSTEM_PROMPT } from './system-prompt.js';
 import type { Tool } from './types.js';
 
@@ -13,7 +13,7 @@ let lastUsageInfo: any = null;
 // Configure ChatOpenAI for OpenRouter
 const llm = new ChatOpenAI({
   apiKey: OPENROUTER_API_KEY,
-  modelName: MODEL_ID,
+  modelName: SELECTED_MODEL,
   configuration: {
     baseURL: 'https://openrouter.ai/api/v1',
     defaultHeaders: {
