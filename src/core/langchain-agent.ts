@@ -22,7 +22,7 @@ const llm = new ChatOpenAI({
   temperature: 0.1
 });
 
-// Convert our tool definitions to LangChain tools
+// Convert our tool definitions to LangChain tools with improved error handling
 function convertToLangChainTools(toolDefs: Tool[]): DynamicStructuredTool[] {
   return toolDefs.map(tool => {
     const toolName = tool.function.name;
@@ -39,14 +39,15 @@ function convertToLangChainTools(toolDefs: Tool[]): DynamicStructuredTool[] {
       func: async (args: any) => {
         try {
           const result = await implementation(args);
-          return JSON.stringify(result);
+          
+          // Return the actual result, not stringified for better LLM processing
+          // LangChain will handle serialization as needed
+          return typeof result === 'string' ? result : JSON.stringify(result, null, 2);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-          return JSON.stringify({ 
-            success: false, 
-            error: errorMessage,
-            message: `Error executing ${toolName}: ${errorMessage}`
-          });
+          
+          // Return a clear error message that the LLM can understand and act upon
+          return `Error: ${errorMessage}. Please try a different approach or check your input parameters.`;
         }
       }
     });
@@ -74,12 +75,13 @@ export async function createMakiAgent() {
     const agentExecutor = new AgentExecutor({
       agent,
       tools: langchainTools,
-      maxIterations: 10,
-      verbose: false,
+      maxIterations: 15, // Increased for complex multi-tool operations
+      verbose: false, // Disable LangChain verbose logging - we have our own
       returnIntermediateSteps: true,
+      earlyStoppingMethod: 'generate', // Better handling of tool outputs
       handleParsingErrors: (error: Error) => {
-        console.error('Agent parsing error:', error);
-        return 'I encountered an error while processing your request. Please try rephrasing your question or breaking it down into smaller steps.';
+        console.error('❌ Agent parsing error:', error);
+        return `I encountered a parsing error: ${error.message}. Let me try a different approach to help you.`;
       }
     });
 
@@ -90,25 +92,49 @@ export async function createMakiAgent() {
   }
 }
 
-// Execute agent with error handling and intermediate steps
+// Execute agent with error handling and detailed logging
 export async function executeAgent(
   agent: AgentExecutor, 
   input: string, 
   chatHistory: any[] = []
-): Promise<{ output: string; error?: string; intermediateSteps?: any[] }> {
+): Promise<{ 
+  output: string; 
+  error?: string; 
+  intermediateSteps?: any[];
+  toolCalls?: Array<{
+    tool: string;
+    input: any;
+    output: any;
+    reasoning?: string;
+  }>;
+}> {
   try {
     const result = await agent.invoke({
       input: input,
       chat_history: chatHistory || []
     });
 
+    // Process intermediate steps to extract tool information  
+    const toolCalls = result.intermediateSteps?.map((step: any) => {
+      const action = step.action;
+      const observation = step.observation;
+      
+      return {
+        tool: action.tool,
+        input: action.toolInput,
+        output: observation,
+        reasoning: action.log || 'No reasoning provided'
+      };
+    }) || [];
+
     return { 
       output: result.output,
-      intermediateSteps: result.intermediateSteps || []
+      intermediateSteps: result.intermediateSteps || [],
+      toolCalls
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    console.error('Agent execution error:', error);
+    console.error('\n❌ Agent execution error:', error);
     
     return {
       output: 'I encountered an error while processing your request. Please try again or rephrase your question.',

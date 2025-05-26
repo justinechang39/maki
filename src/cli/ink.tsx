@@ -449,8 +449,40 @@ const App: React.FC<AppProps> = () => {
       const chatHistory = createMemoryFromHistory(conversationHistory);
       const response = await executeAgent(agentRef.current, trimmedInput, chatHistory);
 
-      // Display tool calls if any occurred
-      if (response.intermediateSteps && response.intermediateSteps.length > 0) {
+      // Display tool calls if any occurred with improved formatting
+      if (response.toolCalls && response.toolCalls.length > 0) {
+        for (const toolCall of response.toolCalls) {
+          let toolResult;
+          
+          try {
+            // Try to parse if it's JSON string
+            if (typeof toolCall.output === 'string') {
+              try {
+                toolResult = JSON.parse(toolCall.output);
+              } catch {
+                toolResult = { message: toolCall.output };
+              }
+            } else {
+              toolResult = toolCall.output;
+            }
+          } catch {
+            toolResult = { message: toolCall.output };
+          }
+          
+          const formattedResult = formatToolResult(toolCall.tool, toolCall.input, toolResult);
+          
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: formattedResult,
+            isToolResult: true,
+            toolName: toolCall.tool,
+            showToolCalls: false
+          } as DisplayMessage]);
+        }
+      }
+      
+      // Fallback to old format if new format not available
+      else if (response.intermediateSteps && response.intermediateSteps.length > 0) {
         for (const step of response.intermediateSteps) {
           if (step.action && step.observation) {
             const toolName = step.action.tool;
@@ -467,7 +499,9 @@ const App: React.FC<AppProps> = () => {
             
             setMessages(prev => [...prev, {
               role: 'assistant',
-              content: `🔧 **${toolName}**: ${formattedResult}`,
+              content: formattedResult,
+              isToolResult: true,
+              toolName: toolName,
               showToolCalls: false
             } as DisplayMessage]);
           }
