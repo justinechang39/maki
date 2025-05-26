@@ -9,7 +9,7 @@ import { ThreadSelector } from '../components/ThreadSelector.js';
 import fs from 'fs';
 import { DATABASE_PATH, OPENROUTER_API_KEY } from '../core/config.js';
 import { ThreadDatabase } from '../core/database.js';
-import { createMakiAgent, executeAgent } from '../core/langchain-agent.js';
+import { createMakiAgent, executeAgent, executeAgentWithProgress } from '../core/langchain-agent.js';
 import { createMemoryFromHistory } from '../core/langchain-memory.js';
 import { SYSTEM_PROMPT } from '../core/system-prompt.js';
 import type { DisplayMessage, Message } from '../core/types.js';
@@ -232,7 +232,15 @@ const App: React.FC<AppProps> = () => {
         
         // Create agent once on startup
         if (!agentRef.current) {
-          agentRef.current = await createMakiAgent();
+          agentRef.current = await createMakiAgent((toolName: string, message: string) => {
+            setMessages(prev => [...prev, {
+              role: 'assistant',
+              content: message,
+              isToolResult: true,
+              toolName: toolName,
+              showToolCalls: false
+            } as DisplayMessage]);
+          });
         }
         
         const threadList = await ThreadDatabase.getAllThreads();
@@ -447,66 +455,15 @@ const App: React.FC<AppProps> = () => {
       }
 
       const chatHistory = createMemoryFromHistory(conversationHistory);
-      const response = await executeAgent(agentRef.current, trimmedInput, chatHistory);
-
-      // Display tool calls if any occurred with improved formatting
-      if (response.toolCalls && response.toolCalls.length > 0) {
-        for (const toolCall of response.toolCalls) {
-          let toolResult;
-          
-          try {
-            // Try to parse if it's JSON string
-            if (typeof toolCall.output === 'string') {
-              try {
-                toolResult = JSON.parse(toolCall.output);
-              } catch {
-                toolResult = { message: toolCall.output };
-              }
-            } else {
-              toolResult = toolCall.output;
-            }
-          } catch {
-            toolResult = { message: toolCall.output };
-          }
-          
-          const formattedResult = formatToolResult(toolCall.tool, toolCall.input, toolResult);
-          
-          setMessages(prev => [...prev, {
-            role: 'assistant',
-            content: formattedResult,
-            isToolResult: true,
-            toolName: toolCall.tool,
-            showToolCalls: false
-          } as DisplayMessage]);
-        }
-      }
       
-      // Fallback to old format if new format not available
-      else if (response.intermediateSteps && response.intermediateSteps.length > 0) {
-        for (const step of response.intermediateSteps) {
-          if (step.action && step.observation) {
-            const toolName = step.action.tool;
-            const toolArgs = step.action.toolInput;
-            let toolResult;
-            
-            try {
-              toolResult = JSON.parse(step.observation);
-            } catch {
-              toolResult = { message: step.observation };
-            }
-            
-            const formattedResult = formatToolResult(toolName, toolArgs, toolResult);
-            
-            setMessages(prev => [...prev, {
-              role: 'assistant',
-              content: formattedResult,
-              isToolResult: true,
-              toolName: toolName,
-              showToolCalls: false
-            } as DisplayMessage]);
-          }
-        }
-      }
+      // Execute agent with progress tracking handled by tool wrappers
+      const response = await executeAgentWithProgress(
+        agentRef.current, 
+        trimmedInput, 
+        chatHistory
+      );
+      
+      // Note: Tool calls are now handled by callbacks above, no need for fallback processing
 
       // Display assistant response
       if (response.output && response.output.trim()) {

@@ -1,10 +1,10 @@
-import { ChatOpenAI } from '@langchain/openai';
-import { createToolCallingAgent, AgentExecutor } from 'langchain/agents';
 import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts';
 import { DynamicStructuredTool } from '@langchain/core/tools';
-import { OPENROUTER_API_KEY, MODEL_ID } from './config.js';
+import { ChatOpenAI } from '@langchain/openai';
+import { AgentExecutor, createToolCallingAgent } from 'langchain/agents';
+import { toolImplementations, tools } from '../tools/index.js';
+import { MODEL_ID, OPENROUTER_API_KEY } from './config.js';
 import { SYSTEM_PROMPT } from './system-prompt.js';
-import { tools, toolImplementations } from '../tools/index.js';
 import type { Tool } from './types.js';
 
 // Configure ChatOpenAI for OpenRouter
@@ -23,7 +23,7 @@ const llm = new ChatOpenAI({
 });
 
 // Convert our tool definitions to LangChain tools with improved error handling
-function convertToLangChainTools(toolDefs: Tool[]): DynamicStructuredTool[] {
+function convertToLangChainTools(toolDefs: Tool[], onToolProgress?: (toolName: string, result: string) => void): DynamicStructuredTool[] {
   return toolDefs.map(tool => {
     const toolName = tool.function.name;
     const implementation = toolImplementations[toolName];
@@ -38,13 +38,32 @@ function convertToLangChainTools(toolDefs: Tool[]): DynamicStructuredTool[] {
       schema: tool.function.parameters || {},
       func: async (args: any) => {
         try {
+          // Show tool execution start
+          if (onToolProgress) {
+            onToolProgress(toolName, `Running tool (${toolName})`);
+          }
+          
           const result = await implementation(args);
+          const resultString = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+          
+          // Show tool result
+          if (onToolProgress) {
+            const truncatedResult = resultString.length > 200 ? 
+              resultString.substring(0, 200) + '...' : 
+              resultString;
+            onToolProgress(toolName, `Tool result returned: ${truncatedResult}`);
+          }
           
           // Return the actual result, not stringified for better LLM processing
           // LangChain will handle serialization as needed
-          return typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+          return resultString;
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+          
+          // Show error if progress callback exists
+          if (onToolProgress) {
+            onToolProgress(toolName, `Tool error: ${errorMessage}`);
+          }
           
           // Return a clear error message that the LLM can understand and act upon
           return `Error: ${errorMessage}. Please try a different approach or check your input parameters.`;
@@ -55,9 +74,9 @@ function convertToLangChainTools(toolDefs: Tool[]): DynamicStructuredTool[] {
 }
 
 // Create the agent
-export async function createMakiAgent() {
+export async function createMakiAgent(onToolProgress?: (toolName: string, message: string) => void) {
   try {
-    const langchainTools = convertToLangChainTools(tools);
+    const langchainTools = convertToLangChainTools(tools, onToolProgress);
     
     const prompt = ChatPromptTemplate.fromMessages([
       ['system', SYSTEM_PROMPT],
@@ -92,7 +111,49 @@ export async function createMakiAgent() {
   }
 }
 
-// Execute agent with error handling and detailed logging
+// Simple execution - progress is handled by tool wrappers
+export async function executeAgentWithProgress(
+  agent: AgentExecutor, 
+  input: string, 
+  chatHistory: any[] = []
+): Promise<{ 
+  output: string; 
+  error?: string; 
+  toolCalls?: Array<{
+    tool: string;
+    input: any;
+    output: any;
+  }>;
+}> {
+  try {
+    const result = await agent.invoke({
+      input: input,
+      chat_history: chatHistory || []
+    });
+
+    // Extract tool calls from intermediate steps
+    const toolCalls = result.intermediateSteps?.map((step: any) => ({
+      tool: step.action.tool,
+      input: step.action.toolInput,
+      output: step.observation
+    })) || [];
+
+    return { 
+      output: result.output,
+      toolCalls
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error('\n❌ Agent execution error:', error);
+    
+    return {
+      output: 'I encountered an error while processing your request. Please try again or rephrase your question.',
+      error: errorMessage
+    };
+  }
+}
+
+// Execute agent with error handling and detailed logging (original function for compatibility)
 export async function executeAgent(
   agent: AgentExecutor, 
   input: string, 
