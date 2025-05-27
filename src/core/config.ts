@@ -16,7 +16,7 @@ export const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 export const AVAILABLE_MODELS = [
   'google/gemini-2.5-flash-preview-05-20:thinking',
   'openai/gpt-4.1-mini',
-  'anthropic/claude-3.7-sonnet'
+  'anthropic/claude-sonnet-4'
 ] as const;
 
 export type ModelId = (typeof AVAILABLE_MODELS)[number];
