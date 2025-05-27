@@ -801,6 +801,7 @@ const App: React.FC<AppProps> = () => {
 
 export function startInkInterface(): void {
   console.log('🚀 Starting maki...');
+  console.log(`📁 Working directory: ${process.cwd()}`);
 
   // Check for API key before starting
   if (!OPENROUTER_API_KEY) {
