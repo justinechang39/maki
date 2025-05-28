@@ -1,8 +1,12 @@
 import * as fs from 'fs/promises';
 import { WORKSPACE_DIRECTORY_NAME } from '../core/config.js';
+import {
+  isValidCSVContent,
+  parseCSVContent,
+  writeCSVContent
+} from '../core/csv-utils.js';
+import type { Tool } from '../core/types.js';
 import { getSafeWorkspacePath } from '../core/utils.js';
-import { parseCSVContent, writeCSVContent, isValidCSVContent } from '../core/csv-utils.js';
-import type { Tool, CSVRow } from '../core/types.js';
 
 export const csvTools: Tool[] = [
   {
@@ -13,8 +17,15 @@ export const csvTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `CSV file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be an existing .csv file.` },
-          hasHeaders: { type: 'boolean', description: 'TRUE: First row contains column names (most common). FALSE: Data starts from first row. Defaults to true.' }
+          path: {
+            type: 'string',
+            description: `CSV file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be an existing .csv file.`
+          },
+          hasHeaders: {
+            type: 'boolean',
+            description:
+              'TRUE: First row contains column names (most common). FALSE: Data starts from first row. Defaults to true.'
+          }
         },
         required: ['path']
       }
@@ -28,11 +39,30 @@ export const csvTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `CSV file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing CSV file.` },
-          rowIndex: { type: 'number', description: 'Data row number (0-based, excluding header row). Use parseCSV preview to identify correct row.' },
-          column: { type: 'string', description: 'Column name (if headers exist) or numeric column index as string. Use exact header name from parseCSV results.' },
-          value: { type: 'string', description: 'New cell value. Will be stored as text - format appropriately for your data type.' },
-          hasHeaders: { type: 'boolean', description: 'Must match the actual file structure. Use parseCSV to confirm. Defaults to true.' }
+          path: {
+            type: 'string',
+            description: `CSV file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing CSV file.`
+          },
+          rowIndex: {
+            type: 'number',
+            description:
+              'Data row number (0-based, excluding header row). Use parseCSV preview to identify correct row.'
+          },
+          column: {
+            type: 'string',
+            description:
+              'Column name (if headers exist) or numeric column index as string. Use exact header name from parseCSV results.'
+          },
+          value: {
+            type: 'string',
+            description:
+              'New cell value. Will be stored as text - format appropriately for your data type.'
+          },
+          hasHeaders: {
+            type: 'boolean',
+            description:
+              'Must match the actual file structure. Use parseCSV to confirm. Defaults to true.'
+          }
         },
         required: ['path', 'rowIndex', 'column', 'value']
       }
@@ -46,9 +76,20 @@ export const csvTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `CSV file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing CSV file.` },
-          rowData: { type: 'object', description: 'Data object with column names as keys and values as strings. Keys must match existing column headers exactly.' },
-          hasHeaders: { type: 'boolean', description: 'Must match file structure. Use parseCSV to verify. Defaults to true.' }
+          path: {
+            type: 'string',
+            description: `CSV file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing CSV file.`
+          },
+          rowData: {
+            type: 'object',
+            description:
+              'Data object with column names as keys and values as strings. Keys must match existing column headers exactly.'
+          },
+          hasHeaders: {
+            type: 'boolean',
+            description:
+              'Must match file structure. Use parseCSV to verify. Defaults to true.'
+          }
         },
         required: ['path', 'rowData']
       }
@@ -62,9 +103,20 @@ export const csvTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `CSV file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing CSV file.` },
-          rowIndex: { type: 'number', description: 'Row number to delete (0-based, excluding header). Use parseCSV preview to identify correct row. Cannot be undone.' },
-          hasHeaders: { type: 'boolean', description: 'Must match file structure. Use parseCSV to verify. Defaults to true.' }
+          path: {
+            type: 'string',
+            description: `CSV file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing CSV file.`
+          },
+          rowIndex: {
+            type: 'number',
+            description:
+              'Row number to delete (0-based, excluding header). Use parseCSV preview to identify correct row. Cannot be undone.'
+          },
+          hasHeaders: {
+            type: 'boolean',
+            description:
+              'Must match file structure. Use parseCSV to verify. Defaults to true.'
+          }
         },
         required: ['path', 'rowIndex']
       }
@@ -78,12 +130,41 @@ export const csvTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          sourcePath: { type: 'string', description: `Source CSV file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing CSV file.` },
-          targetPath: { type: 'string', description: `Output file path for filtered results. Will create new CSV file with matching rows and same structure.` },
-          column: { type: 'string', description: 'Column name to apply filter criteria. Use exact header name from parseCSV results.' },
-          operator: { type: 'string', description: 'Comparison operation: "equals" (exact match), "contains" (substring), "startsWith"/"endsWith" (positional), "greaterThan"/"lessThan" (numeric/alphabetic)', enum: ['equals', 'contains', 'startsWith', 'endsWith', 'greaterThan', 'lessThan'] },
-          value: { type: 'string', description: 'Comparison value. For numeric comparisons, ensure value can be parsed as number.' },
-          hasHeaders: { type: 'boolean', description: 'Must match source file structure. Defaults to true.' }
+          sourcePath: {
+            type: 'string',
+            description: `Source CSV file path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Must be existing CSV file.`
+          },
+          targetPath: {
+            type: 'string',
+            description: `Output file path for filtered results. Will create new CSV file with matching rows and same structure.`
+          },
+          column: {
+            type: 'string',
+            description:
+              'Column name to apply filter criteria. Use exact header name from parseCSV results.'
+          },
+          operator: {
+            type: 'string',
+            description:
+              'Comparison operation: "equals" (exact match), "contains" (substring), "startsWith"/"endsWith" (positional), "greaterThan"/"lessThan" (numeric/alphabetic)',
+            enum: [
+              'equals',
+              'contains',
+              'startsWith',
+              'endsWith',
+              'greaterThan',
+              'lessThan'
+            ]
+          },
+          value: {
+            type: 'string',
+            description:
+              'Comparison value. For numeric comparisons, ensure value can be parsed as number.'
+          },
+          hasHeaders: {
+            type: 'boolean',
+            description: 'Must match source file structure. Defaults to true.'
+          }
         },
         required: ['sourcePath', 'targetPath', 'column', 'operator', 'value']
       }
@@ -97,20 +178,33 @@ export const csvTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `The CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
-          sortColumns: { 
-            type: 'array', 
+          path: {
+            type: 'string',
+            description: `The CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').`
+          },
+          sortColumns: {
+            type: 'array',
             description: 'Array of column sort specifications.',
             items: {
               type: 'object',
               properties: {
-                column: { type: 'string', description: 'Column name to sort by.' },
-                direction: { type: 'string', description: 'Sort direction: "asc" or "desc".', enum: ['asc', 'desc'] }
+                column: {
+                  type: 'string',
+                  description: 'Column name to sort by.'
+                },
+                direction: {
+                  type: 'string',
+                  description: 'Sort direction: "asc" or "desc".',
+                  enum: ['asc', 'desc']
+                }
               },
               required: ['column', 'direction']
             }
           },
-          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers. Defaults to true.' }
+          hasHeaders: {
+            type: 'boolean',
+            description: 'Whether the CSV file has headers. Defaults to true.'
+          }
         },
         required: ['path', 'sortColumns']
       }
@@ -124,11 +218,28 @@ export const csvTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `The CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
-          columnName: { type: 'string', description: 'Name of the new column.' },
-          defaultValue: { type: 'string', description: 'Default value for existing rows. Defaults to empty string.' },
-          position: { type: 'number', description: 'Zero-based position to insert the column. Defaults to end.' },
-          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers. Defaults to true.' }
+          path: {
+            type: 'string',
+            description: `The CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').`
+          },
+          columnName: {
+            type: 'string',
+            description: 'Name of the new column.'
+          },
+          defaultValue: {
+            type: 'string',
+            description:
+              'Default value for existing rows. Defaults to empty string.'
+          },
+          position: {
+            type: 'number',
+            description:
+              'Zero-based position to insert the column. Defaults to end.'
+          },
+          hasHeaders: {
+            type: 'boolean',
+            description: 'Whether the CSV file has headers. Defaults to true.'
+          }
         },
         required: ['path', 'columnName']
       }
@@ -142,9 +253,15 @@ export const csvTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: `The CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
+          path: {
+            type: 'string',
+            description: `The CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').`
+          },
           column: { type: 'string', description: 'Column name to remove.' },
-          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers. Defaults to true.' }
+          hasHeaders: {
+            type: 'boolean',
+            description: 'Whether the CSV file has headers. Defaults to true.'
+          }
         },
         required: ['path', 'column']
       }
@@ -158,9 +275,19 @@ export const csvTools: Tool[] = [
       parameters: {
         type: 'object',
         properties: {
-          sourcePath: { type: 'string', description: `Source CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').` },
-          targetPath: { type: 'string', description: `Target CSV file path where aggregated results will be saved.` },
-          groupByColumns: { type: 'array', items: { type: 'string' }, description: 'Columns to group by.' },
+          sourcePath: {
+            type: 'string',
+            description: `Source CSV file path relative to the workspace root ('${WORKSPACE_DIRECTORY_NAME}').`
+          },
+          targetPath: {
+            type: 'string',
+            description: `Target CSV file path where aggregated results will be saved.`
+          },
+          groupByColumns: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Columns to group by.'
+          },
           aggregations: {
             type: 'array',
             description: 'Array of aggregation specifications.',
@@ -168,13 +295,23 @@ export const csvTools: Tool[] = [
               type: 'object',
               properties: {
                 column: { type: 'string', description: 'Column to aggregate.' },
-                operation: { type: 'string', description: 'Aggregation operation.', enum: ['sum', 'count', 'average', 'min', 'max'] },
-                alias: { type: 'string', description: 'Optional alias for the result column.' }
+                operation: {
+                  type: 'string',
+                  description: 'Aggregation operation.',
+                  enum: ['sum', 'count', 'average', 'min', 'max']
+                },
+                alias: {
+                  type: 'string',
+                  description: 'Optional alias for the result column.'
+                }
               },
               required: ['column', 'operation']
             }
           },
-          hasHeaders: { type: 'boolean', description: 'Whether the CSV file has headers. Defaults to true.' }
+          hasHeaders: {
+            type: 'boolean',
+            description: 'Whether the CSV file has headers. Defaults to true.'
+          }
         },
         required: ['sourcePath', 'targetPath', 'aggregations']
       }
@@ -182,20 +319,23 @@ export const csvTools: Tool[] = [
   }
 ];
 
-export const csvToolImplementations: Record<string, (args: any) => Promise<any>> = {
+export const csvToolImplementations: Record<
+  string,
+  (args: any) => Promise<any>
+> = {
   parseCSV: async (args: { path: string; hasHeaders?: boolean }) => {
     try {
       const safePath = getSafeWorkspacePath(args.path);
       const content = await fs.readFile(safePath, 'utf-8');
-      
+
       const validation = isValidCSVContent(content);
       if (!validation.valid) {
         return { error: `Invalid CSV format: ${validation.reason}` };
       }
-      
+
       const hasHeaders = args.hasHeaders !== false;
       const { headers, rows } = await parseCSVContent(content, hasHeaders);
-      
+
       return {
         success: true,
         path: args.path,
@@ -205,7 +345,10 @@ export const csvToolImplementations: Record<string, (args: any) => Promise<any>>
         preview: rows.slice(0, 5), // First 5 rows for preview
         structure: headers.map(header => ({
           name: header,
-          sampleValues: rows.slice(0, 3).map(row => row[header]).filter(val => val !== null && val !== '')
+          sampleValues: rows
+            .slice(0, 3)
+            .map(row => row[header])
+            .filter(val => val !== null && val !== '')
         }))
       };
     } catch (error: any) {
@@ -213,36 +356,48 @@ export const csvToolImplementations: Record<string, (args: any) => Promise<any>>
     }
   },
 
-  updateCSVCell: async (args: { path: string; rowIndex: number; column: string; value: string; hasHeaders?: boolean }) => {
+  updateCSVCell: async (args: {
+    path: string;
+    rowIndex: number;
+    column: string;
+    value: string;
+    hasHeaders?: boolean;
+  }) => {
     try {
       const safePath = getSafeWorkspacePath(args.path);
       const content = await fs.readFile(safePath, 'utf-8');
-      
+
       const hasHeaders = args.hasHeaders !== false;
       const { headers, rows } = await parseCSVContent(content, hasHeaders);
-      
+
       if (args.rowIndex < 0 || args.rowIndex >= rows.length) {
-        return { error: `Invalid row index ${args.rowIndex}. File has ${rows.length} rows.` };
+        return {
+          error: `Invalid row index ${args.rowIndex}. File has ${rows.length} rows.`
+        };
       }
-      
+
       // Determine column identifier
       let columnKey = args.column;
       if (hasHeaders && !headers.includes(args.column)) {
         // Try to parse as numeric index
         const colIndex = parseInt(args.column, 10);
         if (isNaN(colIndex) || colIndex < 0 || colIndex >= headers.length) {
-          return { error: `Invalid column '${args.column}'. Available columns: ${headers.join(', ')}` };
+          return {
+            error: `Invalid column '${
+              args.column
+            }'. Available columns: ${headers.join(', ')}`
+          };
         }
         columnKey = headers[colIndex];
       }
-      
+
       // Update the cell
       rows[args.rowIndex][columnKey] = args.value;
-      
+
       // Write back to file
       const newContent = await writeCSVContent(headers, rows, hasHeaders);
       await fs.writeFile(safePath, newContent, 'utf-8');
-      
+
       return {
         success: true,
         message: `Updated cell at row ${args.rowIndex}, column '${columnKey}' to '${args.value}'`,
@@ -254,22 +409,26 @@ export const csvToolImplementations: Record<string, (args: any) => Promise<any>>
   },
 
   // ... (I'll continue with the other CSV tool implementations in the next part due to length)
-  
-  addCSVRow: async (args: { path: string; rowData: Record<string, any>; hasHeaders?: boolean }) => {
+
+  addCSVRow: async (args: {
+    path: string;
+    rowData: Record<string, any>;
+    hasHeaders?: boolean;
+  }) => {
     try {
       const safePath = getSafeWorkspacePath(args.path);
       const content = await fs.readFile(safePath, 'utf-8');
-      
+
       const hasHeaders = args.hasHeaders !== false;
       const { headers, rows } = await parseCSVContent(content, hasHeaders);
-      
+
       // Add the new row
       rows.push(args.rowData);
-      
+
       // Write back to file
       const newContent = await writeCSVContent(headers, rows, hasHeaders);
       await fs.writeFile(safePath, newContent, 'utf-8');
-      
+
       return {
         success: true,
         message: `Added new row to ${args.path}`,
@@ -280,25 +439,31 @@ export const csvToolImplementations: Record<string, (args: any) => Promise<any>>
     }
   },
 
-  removeCSVRow: async (args: { path: string; rowIndex: number; hasHeaders?: boolean }) => {
+  removeCSVRow: async (args: {
+    path: string;
+    rowIndex: number;
+    hasHeaders?: boolean;
+  }) => {
     try {
       const safePath = getSafeWorkspacePath(args.path);
       const content = await fs.readFile(safePath, 'utf-8');
-      
+
       const hasHeaders = args.hasHeaders !== false;
       const { headers, rows } = await parseCSVContent(content, hasHeaders);
-      
+
       if (args.rowIndex < 0 || args.rowIndex >= rows.length) {
-        return { error: `Invalid row index ${args.rowIndex}. File has ${rows.length} rows.` };
+        return {
+          error: `Invalid row index ${args.rowIndex}. File has ${rows.length} rows.`
+        };
       }
-      
+
       // Remove the row
       const removedRow = rows.splice(args.rowIndex, 1)[0];
-      
+
       // Write back to file
       const newContent = await writeCSVContent(headers, rows, hasHeaders);
       await fs.writeFile(safePath, newContent, 'utf-8');
-      
+
       return {
         success: true,
         message: `Removed row ${args.rowIndex} from ${args.path}`,
