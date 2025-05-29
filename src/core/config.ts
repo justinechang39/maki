@@ -39,4 +39,4 @@ export const CONFIG_DIRECTORY = isDev
 export const DATABASE_PATH = path.join(CONFIG_DIRECTORY, 'database.sqlite');
 export const WORKSPACE_DIRECTORY = process.cwd(); // Current working directory
 export const WORKSPACE_DIRECTORY_NAME = 'workspace'; // For descriptions only
-export const MAX_CONVERSATION_LENGTH = 100;
+export const MAX_CONVERSATION_LENGTH = 500;
