@@ -374,6 +374,34 @@ export const fileTools: Tool[] = [
         required: []
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getFolderStructure',
+      description: `DIRECTORY MAPPING: Get a comprehensive view of folder structure for better workspace navigation and understanding. Returns all directories recursively with depth indicators, perfect for understanding project organization before performing operations. Much cleaner than using glob for directory exploration.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          startPath: {
+            type: 'string',
+            description: `Starting directory path within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Default: workspace root (".")`,
+          },
+          maxDepth: {
+            type: 'number',
+            description: 'Maximum depth to recurse into subdirectories. Default: 5. Higher values may create verbose output.',
+          },
+          includeHidden: {
+            type: 'boolean',
+            description: 'Include hidden directories (starting with .). Default: false.',
+          },
+          treeFormat: {
+            type: 'boolean',
+            description: 'Return results in tree format with visual indentation. Default: false (returns flat list with depth numbers).',
+          }
+        }
+      }
+    }
   }
 ];
 
@@ -935,6 +963,107 @@ export const fileToolImplementations: Record<
     } catch (error: any) {
       return {
         error: `Failed to get workspace directory information: ${error.message}`
+      };
+    }
+  },
+
+  getFolderStructure: async (args: {
+    startPath?: string;
+    maxDepth?: number;
+    includeHidden?: boolean;
+    treeFormat?: boolean;
+  }) => {
+    try {
+      const startPath = args.startPath || '.';
+      const maxDepth = args.maxDepth || 5;
+      const includeHidden = args.includeHidden || false;
+      const treeFormat = args.treeFormat || false;
+
+      const workspacePath = getSafeWorkspacePath();
+      const searchPath = getSafeWorkspacePath(startPath);
+
+      interface FolderInfo {
+        path: string;
+        depth: number;
+        name: string;
+        relativePath: string;
+      }
+
+      const folders: FolderInfo[] = [];
+
+      const scanDirectory = async (dirPath: string, currentDepth: number): Promise<void> => {
+        if (currentDepth > maxDepth) return;
+
+        try {
+          const entries = await fs.readdir(dirPath, { withFileTypes: true });
+
+          for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+            if (!includeHidden && entry.name.startsWith('.')) continue;
+
+            const fullPath = path.join(dirPath, entry.name);
+            const relativePath = path.relative(workspacePath, fullPath);
+
+            folders.push({
+              path: fullPath,
+              depth: currentDepth,
+              name: entry.name,
+              relativePath: relativePath
+            });
+
+            // Recurse into subdirectory
+            await scanDirectory(fullPath, currentDepth + 1);
+          }
+        } catch (error: any) {
+          // Skip directories we can't read (permissions, etc.)
+          console.warn(`Skipping directory ${dirPath}: ${error.message}`);
+        }
+      };
+
+      // Start scanning from the specified path
+      await scanDirectory(searchPath, 0);
+
+      // Sort by path for consistent output
+      folders.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+
+      if (treeFormat) {
+        // Format as tree with visual indentation
+        const treeLines = folders.map(folder => {
+          const indent = '  '.repeat(folder.depth);
+          const prefix = folder.depth === 0 ? '' : '├─ ';
+          return `${indent}${prefix}${folder.name}/`;
+        });
+
+        return {
+          success: true,
+          startPath,
+          maxDepth,
+          folderCount: folders.length,
+          treeView: treeLines,
+          structure: `Directory structure from '${startPath}':\n${treeLines.join('\n')}`
+        };
+      } else {
+        // Flat list with depth indicators (better for AI processing)
+        const flatList = folders.map(folder => ({
+          path: folder.relativePath,
+          name: folder.name,
+          depth: folder.depth
+        }));
+
+        return {
+          success: true,
+          startPath,
+          maxDepth,
+          folderCount: folders.length,
+          folders: flatList,
+          summary: `Found ${folders.length} directories under '${startPath}' (max depth: ${maxDepth})`
+        };
+      }
+    } catch (error: any) {
+      return {
+        error: `Failed to get folder structure: ${error.message}`,
+        startPath: args.startPath || '.',
+        details: error.stack
       };
     }
   }

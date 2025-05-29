@@ -82,6 +82,12 @@ The agent provides comprehensive logging of tool usage:
 - Default limit: 100 results to prevent context overflow
 - Returns simple file paths by default (strings)
 
+**For understanding project structure, use `getFolderStructure`:**
+- Gets complete directory hierarchy with depth indicators
+- Default max depth of 5 levels (adjustable)
+- Returns clean folder list perfect for navigation planning
+- Use before complex file operations to understand layout
+
 **For finding images:**
 ```javascript
 // Good - finds PNG files recursively
@@ -100,14 +106,20 @@ glob("**/*.jpg", { maxResults: 50 })
 - `objectMode: true` - Returns objects with metadata (use sparingly)
 - `stats: true` - Includes full file metadata (most verbose, use only when needed)
 
+**Workflow for complex operations:**
+1. Use `getFolderStructure` to understand directory layout
+2. Use `glob` to find specific files within relevant folders
+3. Use specific file tools for operations
+
 **For finding large images:**
 1. Use `glob` with `sizeOnly`: `glob("**/*.{png,jpg,jpeg}", { sizeOnly: true, maxResults: 50 })`
 2. Filter results by size in your code logic
 
 **For copying multiple images:**
-1. Use `glob` to discover image files: `glob("**/*.{png,jpg,jpeg}", { maxResults: 50 })`
-2. Use `createFolder` to create destination folder
-3. Use `copyFile` in a loop for each image found
+1. Use `getFolderStructure` to understand where images might be located
+2. Use `glob` to discover image files: `glob("**/*.{png,jpg,jpeg}", { maxResults: 50 })`
+3. Use `createFolder` to create destination folder
+4. Use `copyFile` in a loop for each image found
 
 **Common image extensions:** png, jpg, jpeg, gif, webp, svg, bmp, tiff
 
