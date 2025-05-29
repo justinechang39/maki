@@ -22,6 +22,7 @@ import {
   executeAgentWithProgress
 } from '../core/langchain-agent.js';
 import { createMemoryFromHistory } from '../core/langchain-memory.js';
+import { executeMultiAgent } from '../core/multi-agent-system.js';
 import { SYSTEM_PROMPT } from '../core/system-prompt.js';
 import type { DisplayMessage, Message } from '../core/types.js';
 
@@ -62,6 +63,7 @@ const App: React.FC<AppProps> = () => {
   const [isLoadingThreads, setIsLoadingThreads] = useState(true);
   const [isDeletingThread, setIsDeletingThread] = useState(false);
   const [lastUsage, setLastUsage] = useState<any>(null);
+  const [agentMode, setAgentMode] = useState<'single' | 'multi'>('single');
   const isCreatingThread = useRef(false);
   const isDeletingThreadRef = useRef(false);
   const { exit } = useApp();
@@ -584,19 +586,58 @@ const App: React.FC<AppProps> = () => {
       }
 
       try {
-        // Use the pre-created agent instance
-        if (!agentRef.current) {
-          throw new Error('Agent not initialized');
+        let response: any;
+
+        if (agentMode === 'multi') {
+          // Use multi-agent system
+          const multiResponse = await executeMultiAgent(
+            trimmedInput,
+            (agentName: string, message: string) => {
+              setMessages(prev => [
+                ...prev,
+                {
+                  role: 'assistant',
+                  content: `🤖 ${agentName}: ${message}`,
+                  isToolResult: true,
+                  toolName: agentName,
+                  showToolCalls: false
+                } as DisplayMessage
+              ]);
+            }
+          );
+
+          response = {
+            output: multiResponse.output,
+            usage: null // Multi-agent doesn't return usage yet
+          };
+
+          // Show which agents were used
+          setMessages(prev => [
+            ...prev,
+            {
+              role: 'assistant',
+              content: `✅ Task completed using: ${multiResponse.agents_used.join(
+                ' → '
+              )}`,
+              isToolResult: true,
+              showToolCalls: false
+            } as DisplayMessage
+          ]);
+        } else {
+          // Use single agent (existing flow)
+          if (!agentRef.current) {
+            throw new Error('Agent not initialized');
+          }
+
+          const chatHistory = createMemoryFromHistory(conversationHistory);
+
+          // Execute agent with progress tracking handled by tool wrappers
+          response = await executeAgentWithProgress(
+            agentRef.current,
+            trimmedInput,
+            chatHistory
+          );
         }
-
-        const chatHistory = createMemoryFromHistory(conversationHistory);
-
-        // Execute agent with progress tracking handled by tool wrappers
-        const response = await executeAgentWithProgress(
-          agentRef.current,
-          trimmedInput,
-          chatHistory
-        );
 
         // Note: Tool calls are now handled by callbacks above, no need for fallback processing
 
@@ -691,6 +732,7 @@ const App: React.FC<AppProps> = () => {
         exit();
       }
     } else if (isManagingThread) {
+      console.log('keystroke');
       if (key.upArrow && !isDeletingThread) {
         setThreadManagementIndex(prev => Math.max(0, prev - 1));
       } else if (key.downArrow && !isDeletingThread) {
@@ -709,6 +751,13 @@ const App: React.FC<AppProps> = () => {
       // Chat mode - TextInput component handles the input now
       if (key.ctrl && input === 'c') {
         exit();
+      } else if (key.ctrl && input === 't') {
+        // Toggle agent mode with Ctrl+T
+        setAgentMode(prev => {
+          const newMode = prev === 'single' ? 'multi' : 'single';
+          console.log(`Toggled agent mode: ${prev} -> ${newMode}`);
+          return newMode;
+        });
       }
     }
   });
@@ -795,6 +844,7 @@ const App: React.FC<AppProps> = () => {
       onSubmit={handleSubmit}
       onInputKeyChange={handleInputKeyChange}
       usage={lastUsage}
+      agentMode={agentMode}
     />
   );
 };

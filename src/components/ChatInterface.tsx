@@ -12,6 +12,7 @@ interface ChatInterfaceProps {
   inputKey: number;
   onSubmit: (value: string) => void;
   onInputKeyChange: () => void;
+  agentMode?: 'single' | 'multi';
   usage?: {
     prompt_tokens: number;
     completion_tokens: number;
@@ -28,13 +29,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = React.memo(({
   inputKey, 
   onSubmit, 
   onInputKeyChange,
+  agentMode = 'single',
   usage
 }) => {
   return (
     <Box flexDirection="column" height="100%">
       {/* Header */}
       <Static items={[{ id: 'header' }]}>
-        {(item) => <Text key={item.id} bold color="cyan">▌maki</Text>}
+        {(item) => (
+          <Box key={item.id} flexDirection="row" justifyContent="space-between">
+            <Text bold color="cyan">▌maki</Text>
+            <Text color={agentMode === 'multi' ? 'green' : 'gray'}>
+              Mode: {agentMode === 'multi' ? '🤖 Multi-Agent' : '🧠 Single'} (Ctrl+T to toggle)
+            </Text>
+          </Box>
+        )}
       </Static>
       
       {/* Messages Container with stable positioning */}
