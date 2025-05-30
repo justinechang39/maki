@@ -63,7 +63,7 @@ const App: React.FC<AppProps> = () => {
   const [isLoadingThreads, setIsLoadingThreads] = useState(true);
   const [isDeletingThread, setIsDeletingThread] = useState(false);
   const [lastUsage, setLastUsage] = useState<any>(null);
-  const [agentMode, setAgentMode] = useState<'single' | 'multi'>('single');
+  const [agentMode, setAgentMode] = useState<'single' | 'multi'>('multi');
   const isCreatingThread = useRef(false);
   const isDeletingThreadRef = useRef(false);
   const { exit } = useApp();
