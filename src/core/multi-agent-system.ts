@@ -286,7 +286,8 @@ export function createMultiAgentSystem() {
 // Execute the multi-agent system
 export async function executeMultiAgent(
   input: string,
-  onProgress?: (agentName: string, message: string) => void
+  onProgress?: (agentName: string, message: string) => void,
+  conversationHistory: any[] = []
 ): Promise<{
   output: string;
   agents_used: string[];
@@ -297,8 +298,20 @@ export async function executeMultiAgent(
 
     console.log('🚀 Starting multi-agent system...');
 
+    // Include conversation history in the input for context
+    let contextualInput = input;
+    if (conversationHistory.length > 1) {
+      const recentHistory = conversationHistory
+        .slice(-6) // Last 6 messages for context
+        .filter(msg => msg.role !== 'system')
+        .map(msg => `${msg.role}: ${msg.content}`)
+        .join('\n');
+      
+      contextualInput = `Recent conversation:\n${recentHistory}\n\nCurrent request: ${input}`;
+    }
+
     const result = await graph.invoke({
-      input,
+      input: contextualInput,
       task_type: '',
       web_content: '',
       pdf_links: [],

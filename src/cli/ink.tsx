@@ -589,7 +589,7 @@ const App: React.FC<AppProps> = () => {
         let response: any;
 
         if (agentMode === 'multi') {
-          // Use multi-agent system
+          // Use multi-agent system with conversation history
           const multiResponse = await executeMultiAgent(
             trimmedInput,
             (agentName: string, message: string) => {
@@ -603,7 +603,8 @@ const App: React.FC<AppProps> = () => {
                   showToolCalls: false
                 } as DisplayMessage
               ]);
-            }
+            },
+            conversationHistory
           );
 
           response = {
