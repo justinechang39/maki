@@ -81,10 +81,7 @@ function convertToLangChainTools(
 
           // Show tool result
           if (onToolProgress) {
-            const truncatedResult =
-              resultString.length > 200
-                ? resultString.substring(0, 200) + '...'
-                : resultString;
+            const truncatedResult = resultString;
             onToolProgress(
               toolName,
               `Tool result returned: ${truncatedResult}`
