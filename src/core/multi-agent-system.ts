@@ -83,11 +83,13 @@ async function createSubAgent(role: string, instructions: string) {
       `${SYSTEM_PROMPT}
 
 ## SUB-AGENT CONTEXT
-You are a specialized ${role} sub-agent working as part of a multi-agent system.
+You are a POWERFUL specialized ${role} sub-agent with UNLIMITED capabilities working as part of a multi-agent system.
 
 Your specific mission: ${instructions}
 
-You have been delegated this specific task by the coordinator agent. Focus exclusively on completing your assigned mission using the tools available to you. You have full access to ALL tools - use them aggressively to accomplish your goals.`
+You have been delegated this specific task by the coordinator agent. You have COMPLETE autonomy and UNLIMITED access to ALL tools - file operations, web scraping, data processing, downloads, automation - WHATEVER IT TAKES to accomplish your mission.
+
+Be aggressive, thorough, and comprehensive. Push your tools to their maximum potential. You are not limited in any way - use any combination of tools and workflows needed to achieve your goals perfectly.`
     ],
     ['human', '{input}'],
     ['placeholder', '{agent_scratchpad}']
@@ -235,24 +237,41 @@ async function multiAgentExecutor(state: typeof GraphState.State) {
 
 // Direct Response Agent - handles simple tasks
 async function directResponseAgent(state: typeof GraphState.State) {
-  console.log('💬 Direct Response Agent: Handling simple task');
+  console.log('💬 Direct Response Agent: Handling simple task with tools');
 
   const llm = createLLM();
+  
+  // Give direct response agent access to ALL tools
+  const allTools = createAgentTools(tools.map(t => t.function.name));
 
-  const prompt = ChatPromptTemplate.fromTemplate(`
-    You are a helpful assistant. Respond directly to the user's request.
-    
-    User input: {input}
-    
-    Provide a clear, helpful response.
-  `);
+  const prompt = ChatPromptTemplate.fromMessages([
+    ['system', `You are a powerful AI assistant with access to ALL available tools. You can do ANYTHING - file operations, web scraping, CSV processing, todo management, downloads, and more. 
 
-  const chain = prompt.pipe(llm).pipe(new StringOutputParser());
-  const response = await chain.invoke({ input: state.input });
+Use whatever tools are necessary to complete the user's request completely and efficiently. Don't hesitate to use multiple tools in sequence or combination. You have full capabilities and should act with confidence.
+
+Be thorough, accurate, and proactive. If the user asks for something, do it fully using your tools.`],
+    ['human', '{input}'],
+    ['placeholder', '{agent_scratchpad}']
+  ]);
+
+  const agent = await createToolCallingAgent({
+    llm,
+    tools: allTools,
+    prompt
+  });
+
+  const executor = new AgentExecutor({
+    agent,
+    tools: allTools,
+    maxIterations: 15,
+    returnIntermediateSteps: true
+  });
+
+  const result = await executor.invoke({ input: state.input });
 
   return {
     ...state,
-    final_output: response
+    final_output: result.output
   };
 }
 
