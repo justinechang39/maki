@@ -1,13 +1,17 @@
-import { StringOutputParser } from '@langchain/core/output_parsers';
 import { ChatPromptTemplate } from '@langchain/core/prompts';
 import { DynamicStructuredTool } from '@langchain/core/tools';
-import { Annotation, Command, END, START, StateGraph } from '@langchain/langgraph';
+import {
+  Annotation,
+  Command,
+  END,
+  START,
+  StateGraph
+} from '@langchain/langgraph';
 import { ChatOpenAI } from '@langchain/openai';
 import { AgentExecutor, createToolCallingAgent } from 'langchain/agents';
 import { toolImplementations, tools } from '../tools/index.js';
 import { OPENROUTER_API_KEY, SELECTED_MODEL } from './config.js';
 import { COORDINATOR_PROMPT } from './coordinator-prompt.js';
-import { SYSTEM_PROMPT } from './system-prompt.js';
 
 // Global progress callback for user feedback
 let globalProgressCallback:
@@ -143,6 +147,8 @@ Your specific mission: ${instructions}
 
 You have been delegated this specific task by the coordinator agent. You have COMPLETE access to ALL tools:
 - File operations: glob, readFile, writeFile, createFolder, copyFile, etc.
+- **bulkFileOperation** - PREFERRED for multiple file copy/move/delete operations with patterns
+- **executeShellCommand** - USE FOR COMPLEX BULK OPERATIONS when bulkFileOperation isn't sufficient
 - Data processing: parseCSV, updateCSVCell, filterCSV, etc.
 - Web operations: fetchWebsiteContent, downloadFile, extractLinksFromPage
 - Task management: readTodo, writeTodo, updateTodoItem
@@ -155,12 +161,15 @@ You have been delegated this specific task by the coordinator agent. You have CO
 ## ESSENTIAL TOOL PATTERNS
 - **List directories**: glob("*", {{ onlyDirectories: true }})
 - **Find images**: glob("**/*.{{png,jpg,jpeg,gif}}")
-- **Get file sizes**: glob("**/*", {{ sizeOnly: true }})
-- **Create folder then copy**: createFolder(path) → copyFile(src, dest) for each file
+- **Get file sizes**: glob("**/*", {{ sizeOnly: true }}) - PREFERRED over separate size tools
+- **Single file operations**: createFolder(path) → copyFile(src, dest) for one file
+- **BULK OPERATIONS**: bulkFileOperation(operation: "copy", pattern: "*.jpg", sizeFilter: "+1M", targetFolder: "folder") - PREFERRED for multiple files
+- **COMPLEX BULK**: executeShellCommand("find . -name '*.jpg' -size +1M -exec cp {{}} folder/ \\;", "Copy large images") - For advanced cases
 
 BALANCED EFFICIENCY:
 - You have MAX 7 iterations for quality results
 - Use 'think' tool to plan, then execute with precision
+- **PREFER bulkFileOperation for multi-file operations** - much simpler and safer than shell commands
 - Quality over speed - but don't overthink simple operations
 - If coordinator gave specific tool instructions, follow them exactly`
     ],
@@ -183,9 +192,7 @@ BALANCED EFFICIENCY:
 }
 
 // Parse hybrid execution phases from coordinator response
-function parseHybridPhases(
-  response: string
-): Array<{
+function parseHybridPhases(response: string): Array<{
   mode: string;
   tasks: Array<{ role: string; instructions: string }>;
 }> {
@@ -255,10 +262,15 @@ async function coordinatorAgent(state: typeof GraphState.State) {
       func: async (args: any) => {
         try {
           // Report tool execution for coordinator
-          const inputSummary = Object.keys(args).length > 0 
-            ? `(${Object.entries(args).map(([k, v]) => `${k}: ${JSON.stringify(v).substring(0, 80)}`).join(', ')})`
-            : '()';
-          
+          const inputSummary =
+            Object.keys(args).length > 0
+              ? `(${Object.entries(args)
+                  .map(
+                    ([k, v]) => `${k}: ${JSON.stringify(v).substring(0, 80)}`
+                  )
+                  .join(', ')})`
+              : '()';
+
           globalProgressCallback?.(
             'coordinator',
             `🔧 ${toolName}${inputSummary}`
@@ -269,16 +281,16 @@ async function coordinatorAgent(state: typeof GraphState.State) {
           const duration = Date.now() - startTime;
 
           // Report completion with result preview
-          const resultPreview = typeof result === 'string'
-            ? result.length > 100 ? `${result.substring(0, 100)}...` : result
-            : JSON.stringify(result, null, 2).substring(0, 100) + '...';
-          
+          const resultPreview = JSON.stringify(result);
+
           globalProgressCallback?.(
             'coordinator',
             `✅ ${toolName} completed (${duration}ms): ${resultPreview}`
           );
 
-          return typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+          return typeof result === 'string'
+            ? result
+            : JSON.stringify(result, null, 2);
         } catch (error) {
           const errorMsg = `❌ ${toolName} failed: ${
             error instanceof Error ? error.message : 'Unknown error'
@@ -310,7 +322,10 @@ You know these tools exist for delegation (but don't execute them yourself):
 
 Your job is STRATEGIC PLANNING and DELEGATION, not tool execution.`
     ],
-    ['human', 'User request: {input}\n\nAnalyze this request and respond with your delegation plan.'],
+    [
+      'human',
+      'User request: {input}\n\nAnalyze this request and respond with your delegation plan.'
+    ],
     ['placeholder', '{agent_scratchpad}']
   ]);
 
@@ -359,15 +374,24 @@ Your job is STRATEGIC PLANNING and DELEGATION, not tool execution.`
 
   console.log(`🧠 Coordinator: ${coordinatorMessage}`);
   globalProgressCallback?.('coordinator', coordinatorMessage);
-  
+
   // Add detailed execution mode info
   if (isComplex) {
     if (isHybrid) {
-      globalProgressCallback?.('coordinator', `📋 Hybrid execution planned: ${executionPhases.length} phases`);
+      globalProgressCallback?.(
+        'coordinator',
+        `📋 Hybrid execution planned: ${executionPhases.length} phases`
+      );
     } else if (isParallel) {
-      globalProgressCallback?.('coordinator', '⚡ Parallel execution mode selected for maximum speed');
+      globalProgressCallback?.(
+        'coordinator',
+        '⚡ Parallel execution mode selected for maximum speed'
+      );
     } else {
-      globalProgressCallback?.('coordinator', '🔄 Sequential execution mode selected');
+      globalProgressCallback?.(
+        'coordinator',
+        '🔄 Sequential execution mode selected'
+      );
     }
   }
 
@@ -553,8 +577,12 @@ async function multiAgentExecutor(state: typeof GraphState.State) {
 }
 
 // Smart Agent that can detect complexity and switch execution modes dynamically
-async function smartAgent(state: typeof GraphState.State): Promise<typeof GraphState.State | Command<'parallel_bulk_executor'>> {
-  console.log('🧠 Smart Agent: Analyzing task complexity and executing with full visibility');
+async function smartAgent(
+  state: typeof GraphState.State
+): Promise<typeof GraphState.State | Command<'parallel_bulk_executor'>> {
+  console.log(
+    '🧠 Smart Agent: Analyzing task complexity and executing with full visibility'
+  );
   globalProgressCallback?.(
     'smart_agent',
     'Analyzing task complexity and executing with full tool visibility'
@@ -573,10 +601,15 @@ async function smartAgent(state: typeof GraphState.State): Promise<typeof GraphS
       func: async (args: any) => {
         try {
           // Report tool execution start with detailed input
-          const inputSummary = Object.keys(args).length > 0 
-            ? `(${Object.entries(args).map(([k, v]) => `${k}: ${JSON.stringify(v).substring(0, 100)}`).join(', ')})`
-            : '()';
-          
+          const inputSummary =
+            Object.keys(args).length > 0
+              ? `(${Object.entries(args)
+                  .map(
+                    ([k, v]) => `${k}: ${JSON.stringify(v).substring(0, 100)}`
+                  )
+                  .join(', ')})`
+              : '()';
+
           globalProgressCallback?.(
             'smart_agent',
             `🔧 ${toolDef.function.name}${inputSummary}`
@@ -587,16 +620,16 @@ async function smartAgent(state: typeof GraphState.State): Promise<typeof GraphS
           const duration = Date.now() - startTime;
 
           // Report tool completion with result preview and timing
-          const resultPreview = typeof result === 'string'
-            ? result.length > 150 ? `${result.substring(0, 150)}...` : result
-            : JSON.stringify(result, null, 2).substring(0, 150) + (JSON.stringify(result).length > 150 ? '...' : '');
-          
+          const resultPreview = JSON.stringify(result);
+
           globalProgressCallback?.(
             'smart_agent',
             `✅ ${toolDef.function.name} completed (${duration}ms): ${resultPreview}`
           );
 
-          return typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+          return typeof result === 'string'
+            ? result
+            : JSON.stringify(result, null, 2);
         } catch (error) {
           const errorMsg = `❌ ${toolDef.function.name} failed: ${
             error instanceof Error ? error.message : 'Unknown error'
@@ -615,6 +648,7 @@ async function smartAgent(state: typeof GraphState.State): Promise<typeof GraphS
 
 ## SMART AGENT CONTEXT
 You have comprehensive access to ALL tools and can complete tasks efficiently while detecting complexity.
+**CRITICAL**: Use executeShellCommand for bulk file operations - it's dramatically more efficient than multiple individual tool calls.
 
 ## DYNAMIC SWITCHING CAPABILITY
 You can detect bulk operations and signal when parallel execution is needed:
@@ -643,8 +677,12 @@ When you detect bulk operations, include "PARALLEL_EXECUTION_NEEDED" in your res
 
 ## EXAMPLE DETECTION PATTERNS:
 - "Found 15 large images that need copying - PARALLEL_EXECUTION_NEEDED"
-- "Discovered 8 PDF files for processing - PARALLEL_EXECUTION_NEEDED"
+- "Discovered 8 PDF files for processing - PARALLEL_EXECUTION_NEEDED"  
 - "Multiple downloads detected (>5 URLs) - PARALLEL_EXECUTION_NEEDED"
+
+## EFFICIENCY EXAMPLES:
+- **Instead of**: glob → multiple copyFile calls → individual operations
+- **Use**: bulkFileOperation(operation: "copy", pattern: "*.jpg", sizeFilter: "+1M", targetFolder: "large-images")
 
 BALANCED EFFICIENCY:
 - You have MAX 5 iterations for analysis and simple execution
@@ -668,29 +706,49 @@ BALANCED EFFICIENCY:
     returnIntermediateSteps: true
   });
 
-  globalProgressCallback?.('smart_agent', '🎯 Starting task execution with comprehensive tool visibility...');
-  
+  globalProgressCallback?.(
+    'smart_agent',
+    '🎯 Starting task execution with comprehensive tool visibility...'
+  );
+
   const result = await executor.invoke({ input: state.input });
 
-  globalProgressCallback?.('smart_agent', '🔍 Analyzing agent output for complexity detection...');
-  
+  globalProgressCallback?.(
+    'smart_agent',
+    '🔍 Analyzing agent output for complexity detection...'
+  );
+
   // Parse the agent's response to detect bulk operations
   const output = result.output;
-  
+
   // Check if agent detected bulk operations or complexity
-  if (output.includes('BULK_OPERATION_DETECTED') || 
-      output.includes('PARALLEL_EXECUTION_NEEDED') ||
-      (output.includes('large') && output.includes('images') && output.includes('copy'))) {
-    
-    console.log('🔄 Smart Agent: Bulk operation detected, switching to parallel execution');
-    globalProgressCallback?.('smart_agent', '🔄 Bulk operation detected - initiating dynamic switch to parallel execution');
-    
+  if (
+    output.includes('BULK_OPERATION_DETECTED') ||
+    output.includes('PARALLEL_EXECUTION_NEEDED') ||
+    (output.includes('large') &&
+      output.includes('images') &&
+      output.includes('copy'))
+  ) {
+    console.log(
+      '🔄 Smart Agent: Bulk operation detected, switching to parallel execution'
+    );
+    globalProgressCallback?.(
+      'smart_agent',
+      '🔄 Bulk operation detected - initiating dynamic switch to parallel execution'
+    );
+
     // Extract data for parallel processing from agent's intermediate steps
     const bulkData = extractBulkDataFromSteps(result.intermediateSteps || []);
-    
-    globalProgressCallback?.('smart_agent', `📦 Extracted ${bulkData.length} items for parallel processing`);
-    globalProgressCallback?.('smart_agent', '🚀 Returning Command to switch to parallel_bulk_executor');
-    
+
+    globalProgressCallback?.(
+      'smart_agent',
+      `📦 Extracted ${bulkData.length} items for parallel processing`
+    );
+    globalProgressCallback?.(
+      'smart_agent',
+      '🚀 Returning Command to switch to parallel_bulk_executor'
+    );
+
     return new Command({
       update: {
         ...state,
@@ -703,8 +761,11 @@ BALANCED EFFICIENCY:
   }
 
   // No bulk operation detected, return normal result
-  globalProgressCallback?.('smart_agent', '✅ Task completed directly - no parallel execution needed');
-  
+  globalProgressCallback?.(
+    'smart_agent',
+    '✅ Task completed directly - no parallel execution needed'
+  );
+
   return {
     ...state,
     final_output: result.output
@@ -716,27 +777,31 @@ function extractBulkDataFromSteps(steps: any[]): any[] {
   // This is a simplified implementation
   // In practice, you'd parse the agent's tool calls and analysis
   const bulkData: any[] = [];
-  
+
   for (const step of steps) {
     if (step.action?.tool === 'glob' && step.observation) {
       try {
         const files = JSON.parse(step.observation);
         if (Array.isArray(files) && files.length > 3) {
           // Detected multiple files - treat as bulk operation
-          bulkData.push(...files.map((file: string) => ({ type: 'file', path: file })));
+          bulkData.push(
+            ...files.map((file: string) => ({ type: 'file', path: file }))
+          );
         }
       } catch (e) {
         // Ignore parsing errors
       }
     }
   }
-  
+
   return bulkData;
 }
 
 // Parallel Bulk Executor - handles bulk operations detected by smart agent
 async function parallelBulkExecutor(state: typeof GraphState.State) {
-  console.log('⚡ Parallel Bulk Executor: Processing bulk operations in parallel');
+  console.log(
+    '⚡ Parallel Bulk Executor: Processing bulk operations in parallel'
+  );
   globalProgressCallback?.(
     'parallel_bulk_executor',
     '⚡ Dynamic switch activated - Processing bulk operations in parallel'
@@ -745,12 +810,12 @@ async function parallelBulkExecutor(state: typeof GraphState.State) {
   try {
     // Extract bulk operation data from state
     const bulkData = state.bulk_operation_data || [];
-    
+
     globalProgressCallback?.(
       'parallel_bulk_executor',
       `📊 Bulk data analysis: ${bulkData.length} items detected for parallel processing`
     );
-    
+
     if (bulkData.length === 0) {
       globalProgressCallback?.(
         'parallel_bulk_executor',
@@ -770,19 +835,24 @@ async function parallelBulkExecutor(state: typeof GraphState.State) {
     // Create parallel agents for bulk processing
     const parallelPromises = bulkData.map(async (item: any, index: number) => {
       const agentName = `Bulk Processor ${index + 1}`;
-      
+
       globalProgressCallback?.(
         'parallel_bulk_executor',
-        `🔧 Starting ${agentName} for item: ${JSON.stringify(item).substring(0, 100)}...`
+        `🔧 Starting ${agentName} for item: ${JSON.stringify(item).substring(
+          0,
+          100
+        )}...`
       );
-      
+
       const subAgent = await createSubAgent(
         agentName,
         `Process this item: ${JSON.stringify(item)}`
       );
-      
+
       const result = await subAgent.invoke({
-        input: `Original request: ${state.input}\n\nProcess this specific item: ${JSON.stringify(item)}`
+        input: `Original request: ${
+          state.input
+        }\n\nProcess this specific item: ${JSON.stringify(item)}`
       });
 
       globalProgressCallback?.(
@@ -806,7 +876,9 @@ async function parallelBulkExecutor(state: typeof GraphState.State) {
       `🎉 All ${bulkData.length} parallel agents completed successfully!`
     );
 
-    const finalOutput = `Parallel bulk processing completed!\n\n${results.join('\n\n')}`;
+    const finalOutput = `Parallel bulk processing completed!\n\n${results.join(
+      '\n\n'
+    )}`;
 
     return {
       ...state,
@@ -845,11 +917,11 @@ export function createMultiAgentSystem() {
 
     // Multi-executor goes to END
     .addEdge('multi_executor', END)
-    
+
     // Parallel bulk executor goes to END
     .addEdge('parallel_bulk_executor', END);
-    
-    // Note: smart_agent can use Command to route dynamically, no explicit edges needed
+
+  // Note: smart_agent can use Command to route dynamically, no explicit edges needed
 
   return workflow.compile();
 }

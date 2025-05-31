@@ -182,7 +182,7 @@ export const fileTools: Tool[] = [
     type: 'function',
     function: {
       name: 'deleteFile',
-      description: `CLEANUP OPERATION: Permanently remove files from workspace. Use with caution as this cannot be undone. Ideal for removing temporary files, outdated content, or cleaning up after operations.`,
+      description: `SINGLE FILE DELETION: Permanently remove one file from workspace. For MULTIPLE files, use executeShellCommand with 'find' + 'rm' for bulk deletion. Use with caution as this cannot be undone.`,
       parameters: {
         type: 'object',
         properties: {
@@ -259,7 +259,7 @@ export const fileTools: Tool[] = [
     type: 'function',
     function: {
       name: 'renameFile',
-      description: `REORGANIZATION TOOL: Move/rename files for better organization or correct naming. Can move files between directories. Updates file location while preserving content.`,
+      description: `SINGLE FILE MOVE/RENAME: Move or rename one file. For MULTIPLE files, use executeShellCommand with 'find' + 'mv' for bulk operations. Can move files between directories while preserving content.`,
       parameters: {
         type: 'object',
         properties: {
@@ -280,7 +280,7 @@ export const fileTools: Tool[] = [
     type: 'function',
     function: {
       name: 'copyFile',
-      description: `DUPLICATION TOOL: Create copies of files while preserving the original. Useful for backups, templates, or creating variations of existing files.`,
+      description: `SINGLE FILE DUPLICATION: Copy one file while preserving the original. For MULTIPLE files, use executeShellCommand with 'find' + 'cp' for much better efficiency. Use this only for single file operations.`,
       parameters: {
         type: 'object',
         properties: {
@@ -348,30 +348,71 @@ export const fileTools: Tool[] = [
   {
     type: 'function',
     function: {
-      name: 'getFileSizes',
-      description: `SIZE ANALYSIS: Get file sizes for multiple files at once. Perfect for analyzing storage usage, comparing file sizes, or getting size information for a batch of files.`,
-      parameters: {
-        type: 'object',
-        properties: {
-          paths: {
-            type: 'array',
-            items: { type: 'string' },
-            description: `Array of file paths within workspace (relative to '${WORKSPACE_DIRECTORY_NAME}'). Each path must be an existing file.`
-          }
-        },
-        required: ['paths']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
       name: 'getCurrentDirectory',
       description: `WORKSPACE AWARENESS: Get information about the main workspace directory configuration. Essential for understanding the project's root context. Note: This provides information about the defined workspace, not the OS current working directory.`,
       parameters: {
         type: 'object',
         properties: {},
         required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'executeShellCommand',
+      description: `ADVANCED BULK OPERATIONS: Execute shell commands for complex file operations that would require many individual tool calls. Use for efficient bulk operations like finding files by size/date, batch copying/moving, or complex filtering. MUCH faster than multiple individual tool calls for bulk operations.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          command: {
+            type: 'string',
+            description: 'Shell command to execute. Will be run in the workspace directory. BULK OPERATION EXAMPLES: "mkdir folder && find . -name \'*.jpg\' -size +1M -exec cp {} folder/ \\;" (bulk copy large images), "find . -name \'*.tmp\' -delete" (bulk delete), "find . -name \'*.pdf\' -exec mv {} documents/ \\;" (bulk move)'
+          },
+          description: {
+            type: 'string',
+            description: 'Human-readable description of what this command does (for logging/safety)'
+          }
+        },
+        required: ['command', 'description']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'bulkFileOperation',
+      description: `BULK FILE EFFICIENCY: Perform operations on multiple files matching criteria. Much more efficient than individual tool calls. Combines discovery + action in one step. Use this instead of glob + multiple individual operations.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          operation: {
+            type: 'string',
+            description: 'Operation to perform: "copy", "move", "delete", or "list"',
+            enum: ['copy', 'move', 'delete', 'list']
+          },
+          pattern: {
+            type: 'string',
+            description: 'File pattern to match. Examples: "*.jpg", "**/*.pdf", "*.{png,gif}"'
+          },
+          targetFolder: {
+            type: 'string',
+            description: 'Target folder for copy/move operations. Will be created if needed.'
+          },
+          sizeFilter: {
+            type: 'string',
+            description: 'Size filter. Examples: "+1M" (larger than 1MB), "-100k" (smaller than 100KB), "1M" (exactly 1MB)'
+          },
+          maxDepth: {
+            type: 'number',
+            description: 'Maximum directory depth to search. Default: unlimited'
+          },
+          dryRun: {
+            type: 'boolean',
+            description: 'Show what would be done without actually doing it. Default: false'
+          }
+        },
+        required: ['operation', 'pattern']
       }
     }
   },
@@ -908,42 +949,147 @@ export const fileToolImplementations: Record<
     }
   },
 
-  getFileSizes: async (args: { paths: string[] }) => {
+
+
+  executeShellCommand: async (args: { command: string; description: string }) => {
     try {
-      const results = [];
-      let totalSize = 0;
-
-      for (const filePath of args.paths) {
-        try {
-          const safePath = getSafeWorkspacePath(filePath);
-          const stats = await fs.stat(safePath);
-
-          if (!stats.isFile()) {
-            results.push({ path: filePath, error: 'Not a file' });
-          } else {
-            results.push({
-              path: filePath,
-              size: stats.size,
-              sizeFormatted: formatBytes(stats.size)
-            });
-            totalSize += stats.size;
-          }
-        } catch (error: any) {
-          results.push({ path: filePath, error: error.message });
-        }
-      }
-
+      const { execSync } = await import('child_process');
+      const workspacePath = getSafeWorkspacePath();
+      
+      console.log(`🔧 Executing: ${args.description}`);
+      console.log(`📍 Command: ${args.command}`);
+      console.log(`📂 Working directory: ${workspacePath}`);
+      
+      const output = execSync(args.command, { 
+        cwd: workspacePath, 
+        encoding: 'utf-8',
+        timeout: 30000 // 30 second timeout
+      });
+      
       return {
         success: true,
-        files: results,
-        totalSize,
-        totalSizeFormatted: formatBytes(totalSize),
-        fileCount: args.paths.length,
-        successCount: results.filter(r => !r.error).length
+        command: args.command,
+        description: args.description,
+        output: output.toString(),
+        workingDirectory: workspacePath
       };
     } catch (error: any) {
       return {
-        error: `An unexpected error occurred while getting file sizes: ${error.message}`
+        error: `Shell command failed: ${error.message}`,
+        command: args.command,
+        description: args.description,
+        exitCode: error.status,
+        stderr: error.stderr?.toString(),
+        details: error.stack
+      };
+    }
+  },
+
+  bulkFileOperation: async (args: {
+    operation: 'copy' | 'move' | 'delete' | 'list';
+    pattern: string;
+    targetFolder?: string;
+    sizeFilter?: string;
+    maxDepth?: number;
+    dryRun?: boolean;
+  }) => {
+    try {
+      const { execSync } = await import('child_process');
+      const workspacePath = getSafeWorkspacePath();
+      
+      // Build find command
+      let findCmd = `find .`;
+      
+      if (args.maxDepth) {
+        findCmd += ` -maxdepth ${args.maxDepth}`;
+      }
+      
+      // Add name pattern
+      findCmd += ` -name '${args.pattern}'`;
+      
+      // Add size filter if specified
+      if (args.sizeFilter) {
+        findCmd += ` -size ${args.sizeFilter}`;
+      }
+      
+      // Add type filter for files only
+      findCmd += ` -type f`;
+      
+      let command = '';
+      let description = '';
+      
+      switch (args.operation) {
+        case 'list':
+          command = `${findCmd} -exec ls -lh {} \\;`;
+          description = `List files matching pattern '${args.pattern}'`;
+          break;
+          
+        case 'copy':
+          if (!args.targetFolder) {
+            return { error: 'targetFolder is required for copy operation' };
+          }
+          command = `mkdir -p '${args.targetFolder}' && ${findCmd} -exec cp {} '${args.targetFolder}/' \\;`;
+          description = `Copy files matching '${args.pattern}' to '${args.targetFolder}'`;
+          break;
+          
+        case 'move':
+          if (!args.targetFolder) {
+            return { error: 'targetFolder is required for move operation' };
+          }
+          command = `mkdir -p '${args.targetFolder}' && ${findCmd} -exec mv {} '${args.targetFolder}/' \\;`;
+          description = `Move files matching '${args.pattern}' to '${args.targetFolder}'`;
+          break;
+          
+        case 'delete':
+          command = `${findCmd} -delete`;
+          description = `Delete files matching '${args.pattern}'`;
+          break;
+      }
+      
+      if (args.dryRun) {
+        // For dry run, just list what would be affected
+        const listCmd = `${findCmd}`;
+        const output = execSync(listCmd, { 
+          cwd: workspacePath, 
+          encoding: 'utf-8',
+          timeout: 30000 
+        });
+        
+        return {
+          success: true,
+          dryRun: true,
+          operation: args.operation,
+          pattern: args.pattern,
+          filesFound: output.trim().split('\n').filter(f => f),
+          command: command,
+          description: `DRY RUN: ${description}`
+        };
+      }
+      
+      // Execute the actual command
+      const output = execSync(command, { 
+        cwd: workspacePath, 
+        encoding: 'utf-8',
+        timeout: 30000 
+      });
+      
+      return {
+        success: true,
+        operation: args.operation,
+        pattern: args.pattern,
+        command: command,
+        description: description,
+        output: output.toString(),
+        workingDirectory: workspacePath
+      };
+    } catch (error: any) {
+      return {
+        error: `Bulk file operation failed: ${error.message}`,
+        operation: args.operation,
+        pattern: args.pattern,
+        exitCode: error.status,
+        stderr: error.stderr?.toString(),
+        details: error.stack
       };
     }
   },
