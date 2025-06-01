@@ -14,16 +14,15 @@ export const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 export const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // Available models for user selection
 export const AVAILABLE_MODELS = [
-  'google/gemini-2.5-flash-preview-05-20:thinking',
   'openai/gpt-4.1-mini',
-  'anthropic/claude-sonnet-4',
+  'google/gemini-2.5-flash-preview-05-20:thinking',
   'openai/o4-mini'
 ] as const;
 
 export type ModelId = (typeof AVAILABLE_MODELS)[number];
 
 // Selected model (will be set during app initialization)
-export let SELECTED_MODEL: ModelId = AVAILABLE_MODELS[0];
+export let SELECTED_MODEL: ModelId = 'openai/gpt-4.1-mini';
 
 export function setSelectedModel(model: ModelId) {
   SELECTED_MODEL = model;

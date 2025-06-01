@@ -46,6 +46,7 @@ function createLLM() {
   return new ChatOpenAI({
     apiKey: OPENROUTER_API_KEY,
     modelName: SELECTED_MODEL,
+    maxTokens: 64000, // Back to original token limit
     configuration: {
       baseURL: 'https://openrouter.ai/api/v1',
       defaultHeaders: {
@@ -146,9 +147,16 @@ async function createSubAgent(role: string, instructions: string) {
 Your specific mission: ${instructions}
 
 You have been delegated this specific task by the coordinator agent. You have COMPLETE access to ALL tools:
-- File operations: glob, readFile, writeFile, createFolder, copyFile, etc.
-- **bulkFileOperation** - PREFERRED for multiple file copy/move/delete operations with patterns
-- **executeShellCommand** - USE FOR COMPLEX BULK OPERATIONS when bulkFileOperation isn't sufficient
+
+## REVOLUTIONARY SMART FILE TOOLS
+- **findFiles**: Intelligent file/folder discovery with filtering (pattern, type, size, date)
+- **processFiles**: Multi-step workflow engine (find → process → action in one call)
+- **batchRename**: Intelligent pattern-based renaming with templates
+- **organizeFiles**: Rule-based smart file organization
+- **inspectPath**: Comprehensive path analysis and information
+- **quickFileOps**: Optimized basic operations (read, write, copy, move, delete)
+
+## OTHER TOOL CATEGORIES
 - Data processing: parseCSV, updateCSVCell, filterCSV, etc.
 - Web operations: fetchWebsiteContent, downloadFile, extractLinksFromPage
 - Task management: readTodo, writeTodo, updateTodoItem
@@ -158,19 +166,20 @@ You have been delegated this specific task by the coordinator agent. You have CO
 - **Use 'think' during execution** to verify progress and next steps  
 - **Use 'think' before completion** to ensure all requirements are met
 
-## ESSENTIAL TOOL PATTERNS
-- **List directories**: glob("*", {{ onlyDirectories: true }})
-- **Find images**: glob("**/*.{{png,jpg,jpeg,gif}}")
-- **Get file sizes**: glob("**/*", {{ sizeOnly: true }}) - PREFERRED over separate size tools
-- **Single file operations**: createFolder(path) → copyFile(src, dest) for one file
-- **BULK OPERATIONS**: bulkFileOperation(operation: "copy", pattern: "*.jpg", sizeFilter: "+1M", targetFolder: "folder") - PREFERRED for multiple files
-- **COMPLEX BULK**: executeShellCommand("find . -name '*.jpg' -size +1M -exec cp {{}} folder/ \\;", "Copy large images") - For advanced cases
+## SMART FILE TOOL USAGE PATTERNS
+- **Find files/folders**: findFiles(pattern: "**/*induction*", type: "folders")
+- **Complex workflows**: processFiles(findPattern: "**/*induction*", findType: "folders", thenAction: "findInside", insidePattern: "**/*.jpg", finalAction: "copy", finalTarget: "images")
+- **Batch renaming**: batchRename(location: "folder", pattern: "*.jpg", template: "YYYY-MM-DD_name.ext")
+- **Smart organization**: organizeFiles(sourcePattern: "downloads/**/*", rules: [condition: "ext=jpg,png", action: "images/"])
+- **Path analysis**: inspectPath(path: "folder_name")
+- **Basic operations**: quickFileOps(operation: "copy", source: "file.txt", target: "backup/")
 
-BALANCED EFFICIENCY:
+WORKFLOW EFFICIENCY:
 - You have MAX 7 iterations for quality results
 - Use 'think' tool to plan, then execute with precision
-- **PREFER bulkFileOperation for multi-file operations** - much simpler and safer than shell commands
-- Quality over speed - but don't overthink simple operations
+- **PREFER smart file tools for complex operations** - they handle entire workflows
+- **Use processFiles for multi-step operations** - replaces 50+ individual tool calls
+- Quality over speed - but leverage smart tools for maximum efficiency
 - If coordinator gave specific tool instructions, follow them exactly`
     ],
     ['human', '{input}'],
@@ -342,67 +351,80 @@ Your job is STRATEGIC PLANNING and DELEGATION, not tool execution.`
     returnIntermediateSteps: true
   });
 
-  const result = await executor.invoke({ input: state.input });
-  const response = result.output;
+  try {
+    const result = await executor.invoke({ input: state.input });
+    const response = result.output;
 
-  const isComplex = response.includes('COMPLEXITY: COMPLEX');
-  const isParallel = response.includes('EXECUTION: PARALLEL');
-  const isHybrid = response.includes('EXECUTION: HYBRID');
-  const isSequential = response.includes('EXECUTION: SEQUENTIAL');
+    const isComplex = response.includes('COMPLEXITY: COMPLEX');
+    const isParallel = response.includes('EXECUTION: PARALLEL');
+    const isHybrid = response.includes('EXECUTION: HYBRID');
+    const isSequential = response.includes('EXECUTION: SEQUENTIAL');
 
-  let executionMode = 'SEQUENTIAL'; // default
-  if (isHybrid) {
-    executionMode = 'HYBRID';
-  } else if (isParallel) {
-    executionMode = 'PARALLEL';
-  }
-
-  // Parse hybrid phases if hybrid execution
-  let executionPhases: Array<{
-    mode: string;
-    tasks: Array<{ role: string; instructions: string }>;
-  }> = [];
-  if (isHybrid && response.includes('PHASES:')) {
-    executionPhases = parseHybridPhases(response);
-  }
-
-  const coordinatorMessage = `${
-    isComplex
-      ? `🎯 Delegating with ${executionMode} execution`
-      : '🎯 Routing to smart agent for analysis'
-  }`;
-
-  console.log(`🧠 Coordinator: ${coordinatorMessage}`);
-  globalProgressCallback?.('coordinator', coordinatorMessage);
-
-  // Add detailed execution mode info
-  if (isComplex) {
+    let executionMode = 'SEQUENTIAL'; // default
     if (isHybrid) {
-      globalProgressCallback?.(
-        'coordinator',
-        `📋 Hybrid execution planned: ${executionPhases.length} phases`
-      );
+      executionMode = 'HYBRID';
     } else if (isParallel) {
-      globalProgressCallback?.(
-        'coordinator',
-        '⚡ Parallel execution mode selected for maximum speed'
-      );
-    } else {
-      globalProgressCallback?.(
-        'coordinator',
-        '🔄 Sequential execution mode selected'
-      );
+      executionMode = 'PARALLEL';
     }
-  }
 
-  return {
-    ...state,
-    needs_delegation: isComplex,
-    task_type: isComplex ? 'complex' : 'simple',
-    execution_mode: executionMode,
-    execution_phases: executionPhases,
-    analysis: response // Store the full plan
-  };
+    // Parse hybrid phases if hybrid execution
+    let executionPhases: Array<{
+      mode: string;
+      tasks: Array<{ role: string; instructions: string }>;
+    }> = [];
+    if (isHybrid && response.includes('PHASES:')) {
+      executionPhases = parseHybridPhases(response);
+    }
+
+    const coordinatorMessage = `${
+      isComplex
+        ? `🎯 Delegating with ${executionMode} execution`
+        : '🎯 Routing to smart agent for analysis'
+    }`;
+
+    console.log(`🧠 Coordinator: ${coordinatorMessage}`);
+    globalProgressCallback?.('coordinator', coordinatorMessage);
+
+    // Add detailed execution mode info
+    if (isComplex) {
+      if (isHybrid) {
+        globalProgressCallback?.(
+          'coordinator',
+          `📋 Hybrid execution planned: ${executionPhases.length} phases`
+        );
+      } else if (isParallel) {
+        globalProgressCallback?.(
+          'coordinator',
+          '⚡ Parallel execution mode selected for maximum speed'
+        );
+      } else {
+        globalProgressCallback?.(
+          'coordinator',
+          '🔄 Sequential execution mode selected'
+        );
+      }
+    }
+
+    return {
+      ...state,
+      needs_delegation: isComplex,
+      task_type: isComplex ? 'complex' : 'simple',
+      execution_mode: executionMode,
+      execution_phases: executionPhases,
+      analysis: response // Store the full plan
+    };
+  } catch (error) {
+    console.error('❌ Coordinator agent error:', error);
+    // Fallback to simple execution when coordinator fails
+    return {
+      ...state,
+      needs_delegation: false,
+      task_type: 'simple',
+      execution_mode: 'SEQUENTIAL',
+      execution_phases: [],
+      analysis: 'Coordinator failed, falling back to simple execution'
+    };
+  }
 }
 
 // Multi-Agent Executor - executes the plan from coordinator (supports parallel execution)
@@ -648,7 +670,15 @@ async function smartAgent(
 
 ## SMART AGENT CONTEXT
 You have comprehensive access to ALL tools and can complete tasks efficiently while detecting complexity.
-**CRITICAL**: Use executeShellCommand for bulk file operations - it's dramatically more efficient than multiple individual tool calls.
+**REVOLUTIONARY**: You have access to smart file tools that handle entire workflows in single calls.
+
+## SMART FILE TOOLS AVAILABLE
+- **findFiles**: Intelligent discovery with filtering (pattern, type, size, date)
+- **processFiles**: Multi-step workflow engine (find → action → process in one call)
+- **batchRename**: Pattern-based renaming with templates
+- **organizeFiles**: Rule-based smart organization
+- **inspectPath**: Comprehensive path analysis
+- **quickFileOps**: Optimized basic operations
 
 ## DYNAMIC SWITCHING CAPABILITY
 You can detect bulk operations and signal when parallel execution is needed:
@@ -658,20 +688,20 @@ You can detect bulk operations and signal when parallel execution is needed:
 
 ## CRITICAL: USE 'think' TOOL FOR COMPLEXITY ANALYSIS
 - **ALWAYS use 'think' tool first** to analyze the request complexity
-- **Use 'glob' to discover** what files/data need processing
+- **Use smart file tools** to discover what files/data need processing
 - **Count the items** - if >3 items detected, signal for parallel execution
-- **If simple task** - complete it directly
+- **If simple task** - complete it directly with smart tools
 
 ## SWITCHING DECISION CRITERIA:
 - **>3 files to process** → signal for parallel execution
 - **Multiple downloads** → signal for parallel execution  
 - **Large image/file operations** → signal for parallel execution
-- **Single simple operations** → handle directly
+- **Single simple operations** → handle directly with smart tools
 
 ## SIGNALING FOR PARALLEL EXECUTION:
 When you detect bulk operations, include "PARALLEL_EXECUTION_NEEDED" in your response:
 - Use 'think' to analyze the scope of the operation
-- Use 'glob' to discover files that need processing
+- Use smart file tools to discover files that need processing
 - If you find >3 items to process, include "PARALLEL_EXECUTION_NEEDED" in your final response
 - The system will automatically switch to parallel execution for you
 
@@ -711,7 +741,16 @@ BALANCED EFFICIENCY:
     '🎯 Starting task execution with comprehensive tool visibility...'
   );
 
-  const result = await executor.invoke({ input: state.input });
+  let result;
+  try {
+    result = await executor.invoke({ input: state.input });
+  } catch (error) {
+    console.error('❌ Smart agent execution error:', error);
+    return {
+      ...state,
+      final_output: `Smart agent execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+    };
+  }
 
   globalProgressCallback?.(
     'smart_agent',
@@ -991,9 +1030,16 @@ export async function executeMultiAgent(
     };
   } catch (error) {
     console.error('❌ Multi-agent system error:', error);
+    console.error('❌ Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : 'No stack trace',
+      name: error instanceof Error ? error.name : 'Unknown error type'
+    });
+    
+    // Return more detailed error for debugging
+    const errorDetails = error instanceof Error ? error.message : 'Unknown error occurred';
     return {
-      output:
-        'I encountered an error while processing your request. Please try again.',
+      output: `Multi-agent system error: ${errorDetails}. Please check the logs for more details.`,
       agents_used: [],
       task_type: 'error'
     };

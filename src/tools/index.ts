@@ -2,7 +2,10 @@ import type { Tool } from '../core/types.js';
 
 // Tool definitions
 import { csvToolImplementations, csvTools } from './csv-tools.js';
-import { fileToolImplementations, fileTools } from './file-tools.js';
+import {
+  smartFileImplementations,
+  smartFileTools
+} from './smart-file-tools.js';
 import { todoToolImplementations, todoTools } from './todo-tools.js';
 import { webToolImplementations, webTools } from './web-tools.js';
 
@@ -38,7 +41,7 @@ const thinkImplementation = async (args: { thoughts: string }) => {
 // Export all tools and implementations
 export const tools: Tool[] = [
   thinkTool,
-  ...fileTools,
+  ...smartFileTools,
   ...csvTools,
   ...todoTools,
   ...webTools
@@ -47,7 +50,7 @@ export const tools: Tool[] = [
 export const toolImplementations: Record<string, (args: any) => Promise<any>> =
   {
     think: thinkImplementation,
-    ...fileToolImplementations,
+    ...smartFileImplementations,
     ...csvToolImplementations,
     ...todoToolImplementations,
     ...webToolImplementations

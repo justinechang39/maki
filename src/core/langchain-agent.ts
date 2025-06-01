@@ -18,6 +18,7 @@ function createLLM() {
   return new ChatOpenAI({
     apiKey: OPENROUTER_API_KEY,
     modelName: SELECTED_MODEL,
+    maxTokens: 64000, // Back to original token limit
     configuration: {
       baseURL: 'https://openrouter.ai/api/v1',
       defaultHeaders: {
